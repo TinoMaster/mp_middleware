@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+    <artifactId>mypay.mypaycore</artifactId>
+    <groupId>it.ariaspa.mypay.mypaycore</groupId>
+    <version>1.0.0</version>
+  </parent>
+
+	<artifactId>mypay.mypaycore-release</artifactId>
+	<packaging>pom</packaging>
+	<name>mypay.mypaycore-release</name>
+
+	<dependencies>
+		<dependency>
+			<groupId>it.ariaspa.mypay.mypaycore</groupId>
+			<artifactId>mypay.mypaycore-springboot</artifactId>
+			<version>1.0.0</version>
+			<type>jar</type>
+		</dependency>
+		<dependency>
+			<groupId>it.ariaspa.mypay.mypaycore</groupId>
+			<artifactId>mypay.mypaycore-properties</artifactId>
+			<version>1.0.0</version>
+			<type>zip</type>
+		</dependency>
+		<dependency>
+			<groupId>it.ariaspa.mypay.mypaycore</groupId>
+			<artifactId>mypay.mypaycore-db</artifactId>
+			<version>1.0.0</version>
+			<type>zip</type>
+		</dependency>
+	</dependencies>
+	
+	<licenses>
+		<license>
+			<name>Ariaspa License, Version 1.0</name>
+			<url>http://cm-maven.adlispa.local/licenza/license.txt</url>
+			<distribution>repo</distribution>
+			<comments>Licenza di prodotti erogati da Ariaspa per Regione Lombardia</comments>
+		</license>
+	</licenses>
+	
+</project>

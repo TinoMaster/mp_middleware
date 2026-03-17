@@ -1,0 +1,81 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Spring Boot
+spring-boot-*/
+
+
+# Logs
+logs/
+*.log
+log4j2*.xml
+
+# Application
+application-local.yml
+application-local.properties
+!src/main/resources/config/application-local.properties
+
+# Environment
+.env
+.env.*
+*.env
+credentials.json
+*.pfx
+*.key
+*.pem
+
+# Test
+/test-output/
+surefire-reports/
+
+# Build
+out/
+bin/
+dist/
+
+# Local data (DB, uploads, etc.)
+data/
+db-data/
+uploads/
+files/
+
+# SpringLine2 specific (cache, config)
+cloud-config-cache/
+config-cache/

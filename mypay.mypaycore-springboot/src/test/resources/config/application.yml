@@ -1,0 +1,49 @@
+# =============================================================================
+# Test configuration - disabilita componenti non necessari nei test
+# =============================================================================
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+  cloud:
+    config:
+      enabled: false
+
+piattaforma-unitaria:
+  base-url: http://localhost:${wiremock.server.port:8089}
+  auth:
+    token-url: ${piattaforma-unitaria.base-url}/pu/auth/oauth/token
+    client-id: test-client-id
+    client-secret: test-client-secret
+    grant-type: client_credentials
+    scope: openid
+
+# Disabilita resilience4j nei test unitari
+resilience4j:
+  circuitbreaker:
+    instances:
+      piattaformaUnitaria:
+        sliding-window-size: 5
+        failure-rate-threshold: 100
+  retry:
+    instances:
+      piattaformaUnitaria:
+        max-attempts: 1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+spl:
+  security:
+    jwt:
+      cypher-secret: test-secret-key-for-unit-tests-only
+      token-validity: 180000
+    authentication:
+      anonymous:
+        enabled: true
+        uri-matchers: /**

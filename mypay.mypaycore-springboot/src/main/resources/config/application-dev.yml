@@ -1,0 +1,38 @@
+# =============================================================================
+# Profilo DEV - Sviluppo locale
+# =============================================================================
+# Attivare con: spring.profiles.active=dev
+
+piattaforma-unitaria:
+  base-url: https://api.uat.p4pa.pagopa.it
+  auth:
+    token-url: ${piattaforma-unitaria.base-url}/pu/auth/oauth/token
+    client-id: ${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
+    client-secret: ${PIATTAFORMA_CLIENT_SECRET:xxxxx}
+
+# Logging piu verboso in sviluppo
+logging:
+  level:
+    it.ariaspa.mypay: DEBUG
+    org.springframework.ws: DEBUG
+
+# Actuator: dettagli sempre visibili in dev
+management:
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+# Resilience4j: parametri rilassati per sviluppo
+resilience4j:
+  circuitbreaker:
+    instances:
+      piattaformaUnitaria:
+        sliding-window-size: 5
+        failure-rate-threshold: 80
+        wait-duration-in-open-state: 10s
+  retry:
+    instances:
+      piattaformaUnitaria:
+        max-attempts: 2
+        wait-duration: 500ms

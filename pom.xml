@@ -1,0 +1,52 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+		<spring-boot.version>3.5.5</spring-boot.version>
+		<spring-line.version>2027.01.01</spring-line.version>
+
+		<java.version>17</java.version>
+		<maven.compiler.release>17</maven.compiler.release>
+		<maven.compiler.target>17</maven.compiler.target>
+		<maven.compiler.source>17</maven.compiler.source>
+		<custom-package-plugin.version>2.0.1</custom-package-plugin.version>
+		<maven-resources-plugin.version>3.1.0</maven-resources-plugin.version>
+		<maven-compiler-plugin.version>3.8.0</maven-compiler-plugin.version>
+		<maven-jar-plugin.version>3.1.0</maven-jar-plugin.version>
+
+		<hsqldb.version>2.4.0</hsqldb.version>
+	</properties>
+
+	<parent>
+		<groupId>it.ariaspa</groupId>
+		<artifactId>cm</artifactId>
+		<version>1.0.0</version>
+	</parent>
+
+	<groupId>it.ariaspa.mypay.mypaycore</groupId>
+	<artifactId>mypay.mypaycore</artifactId>
+	<version>1.0.0</version>
+	<packaging>pom</packaging>
+	<name>mypay.mypaycore</name>
+	<description>Middleware di integrazione tra SIL e Piattaforma Unitaria (pagoPA)</description>
+
+	<modules>
+		<module>mypay.mypaycore-db</module>
+		<module>mypay.mypaycore-properties</module>
+		<module>mypay.mypaycore-springboot</module>
+		<module>mypay.mypaycore-release</module>
+	</modules>
+
+	<licenses>
+		<license>
+			<name>Ariaspa License, Version 1.0</name>
+			<url>http://cm-maven.adlispa.local/licenza/license.txt</url>
+			<distribution>repo</distribution>
+			<comments>Licenza di prodotti erogati da Ariaspa per Regione Lombardia</comments>
+		</license>
+	</licenses>
+</project>

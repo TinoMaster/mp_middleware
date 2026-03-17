@@ -1,0 +1,47 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+
+server:
+   port: 8443
+   ssl:
+      keyStore: certs/lispa.local.p12
+      keyStoreType: PKCS12
+      keyAlias: lispa.local
+      keyStorePassword: lispa.local
+      enabled: true
+      enabledProtocols: TLSv1.2
+      protocol: TLS
+
+# --- Piattaforma Unitaria (pagoPA) - Ambiente UAT ---
+piattaforma-unitaria:
+  base-url: https://api.uat.p4pa.pagopa.it
+  auth:
+    token-url: ${piattaforma-unitaria.base-url}/pu/auth/oauth/token
+    client-id: ${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
+    client-secret: ${PIATTAFORMA_CLIENT_SECRET:xxxxx}
+    grant-type: client_credentials
+    scope: openid
+
+spl:
+  http:
+    logging:
+      app.enabled: true
+  client-rest:
+    logging:
+      app.enabled: true
+  client-ws:
+    logging:
+      app.enabled: true
+
+  open-api:
+    authorize:
+      idpc: true
+
+  security:
+    jwt:
+      cypher-secret: vdfcvevj56h90547892d678034f78934f
+      token-validity: 180000

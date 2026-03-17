@@ -1,0 +1,6 @@
+-- =============================================================================
+-- MyPay Middleware - Database Scripts
+-- =============================================================================
+-- Fase 1: Nessuna tabella richiesta (token cache in-memory).
+-- Le tabelle per il middleware verranno aggiunte nelle fasi successive.
+-- =============================================================================
