@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Configurazione per la connessione alla Piattaforma Unitaria (pagoPA).
- *
+ * <p>
  * Legge le proprietà dal blocco 'piattaforma-unitaria' in application.yml.
  * Contiene le URL di base e le credenziali OAuth2 per l'autenticazione
  * tramite Client Credentials Flow.

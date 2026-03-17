@@ -22,21 +22,22 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
+
 import java.util.List;
 
 /**
  * Client HTTP per la comunicazione con la Piattaforma Unitaria (pagoPA).
- *
+ * <p>
  * Responsabilita:
  * - Inoltrare le richieste SOAP ricevute dai SIL verso la piattaforma
  * - Gestire l'autenticazione tramite OAuthTokenInterceptor (Bearer token automatico)
  * - Gestire il retry del token in caso di risposta 401 Unauthorized
  * - Restituire la risposta della piattaforma al chiamante
- *
+ * <p>
  * Resilienza (Resilience4j):
  * - Circuit Breaker: apre il circuito dopo troppi errori consecutivi
  * - Retry: tentativi con backoff esponenziale per errori temporanei
- *
+ * <p>
  * Il RestTemplate interno e configurato con:
  * - OAuthTokenInterceptor per aggiungere automaticamente l'header Authorization Bearer
  * - Timeout di connessione e lettura configurabili
@@ -46,10 +47,14 @@ public class PiattaformaUnitariaClient {
 
     private static final Logger log = LoggerFactory.getLogger(PiattaformaUnitariaClient.class);
 
-    /** Timeout di connessione per le richieste verso la piattaforma (millisecondi). */
+    /**
+     * Timeout di connessione per le richieste verso la piattaforma (millisecondi).
+     */
     private static final int CONNECT_TIMEOUT_MS = 5_000;
 
-    /** Timeout di lettura per le richieste verso la piattaforma (millisecondi). */
+    /**
+     * Timeout di lettura per le richieste verso la piattaforma (millisecondi).
+     */
     private static final int READ_TIMEOUT_MS = 30_000;
 
     private final PiattaformaUnitariaConfig config;
@@ -58,8 +63,8 @@ public class PiattaformaUnitariaClient {
     private RestTemplate restTemplate;
 
     public PiattaformaUnitariaClient(PiattaformaUnitariaConfig config,
-                                      OAuthTokenInterceptor oAuthTokenInterceptor,
-                                      OAuthTokenService oAuthTokenService) {
+                                     OAuthTokenInterceptor oAuthTokenInterceptor,
+                                     OAuthTokenService oAuthTokenService) {
         this.config = config;
         this.oAuthTokenInterceptor = oAuthTokenInterceptor;
         this.oAuthTokenService = oAuthTokenService;
@@ -69,9 +74,9 @@ public class PiattaformaUnitariaClient {
      * Costruttore per testing che consente di iniettare un RestTemplate mock.
      */
     PiattaformaUnitariaClient(PiattaformaUnitariaConfig config,
-                               OAuthTokenInterceptor oAuthTokenInterceptor,
-                               OAuthTokenService oAuthTokenService,
-                               RestTemplate restTemplate) {
+                              OAuthTokenInterceptor oAuthTokenInterceptor,
+                              OAuthTokenService oAuthTokenService,
+                              RestTemplate restTemplate) {
         this.config = config;
         this.oAuthTokenInterceptor = oAuthTokenInterceptor;
         this.oAuthTokenService = oAuthTokenService;
@@ -97,11 +102,11 @@ public class PiattaformaUnitariaClient {
 
     /**
      * Inoltra una richiesta SOAP alla Piattaforma Unitaria.
-     *
+     * <p>
      * Il metodo invia il payload XML/SOAP alla piattaforma utilizzando
      * il token OAuth2 per l'autenticazione. In caso di risposta 401,
      * effettua un retry con un nuovo token.
-     *
+     * <p>
      * Resilienza:
      * - CircuitBreaker "piattaformaUnitaria": protegge da errori continuativi
      * - Retry "piattaformaUnitaria": retry con backoff esponenziale per errori temporanei
@@ -109,7 +114,7 @@ public class PiattaformaUnitariaClient {
      * @param path    il percorso relativo dell'endpoint sulla piattaforma
      * @param soapXml il corpo XML/SOAP della richiesta
      * @return la risposta XML/SOAP della piattaforma
-     * @throws PiattaformaCommunicationException in caso di errore nella comunicazione
+     * @throws PiattaformaCommunicationException  in caso di errore nella comunicazione
      * @throws PiattaformaAuthenticationException in caso di errore di autenticazione persistente
      */
     @CircuitBreaker(name = "piattaformaUnitaria", fallbackMethod = "forwardSoapRequestFallback")
