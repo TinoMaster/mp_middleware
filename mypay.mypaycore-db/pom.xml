@@ -25,67 +25,34 @@
 				<configuration>
 					<sourceDirectory>${project.build.directory}/${project.build.finalName}</sourceDirectory>
 				</configuration>
-				<executions>
-					<execution>
-						<id>scripts-rest-service</id>
-						<phase>prepare-package</phase>
-						<goals>
-							<goal>db-zip</goal>
-						</goals>
-						<configuration>
-							<db>REST-SERVICE</db>
-							<scripts>
-								<script>
-									<file>${basedir}/src/main/sql/001_CREATE_TABLESPACE_TS_RESTSERV.sql</file>
-									<schema>SYS</schema>
-									<operazione>CREATE</operazione>
-									<oggetto>TABLESPACE</oggetto>
-									<nomeOggetto>TS_RESTSERV</nomeOggetto>
-									<note>nessuna</note>
-					                <dropOggetto>N</dropOggetto>
-                					<tde>N</tde>
-                					<lungaDurata>N</lungaDurata>
-								</script>
-								<script>
-									<file>${basedir}/src/main/sql/002_CREATE_USER_RESTSERV.sql</file>
-									<schema>SYS</schema>
-									<operazione>CREATE</operazione>
-									<oggetto>USER</oggetto>
-									<nomeOggetto>RESTSERV</nomeOggetto>
-									<note>nessuna</note>
-					                <dropOggetto>N</dropOggetto>
-                					<tde>N</tde>
-                					<lungaDurata>N</lungaDurata>
-								</script>
-								<script>
-									<file>${basedir}/src/main/sql/003_RESTSERV_CREATE_TABLE_CAR.sql</file>
-									<schema>RESTSERV</schema>
-									<operazione>CREATE</operazione>
-									<oggetto>TABLE</oggetto>
-									<nomeOggetto>CAR</nomeOggetto>
-									<note>nessuna</note>
-					                <dropOggetto>N</dropOggetto>
-                					<tde>N</tde>
-                					<lungaDurata>N</lungaDurata>
-								</script>
-								<script>
-									<file>${basedir}/src/main/sql/004_RESTSERV_CREATE_SEQUENCE_CAR_SEQ.sql</file>
-									<schema>RESTSERV</schema>
-									<operazione>CREATE</operazione>
-									<oggetto>SEQUENCE</oggetto>
-									<nomeOggetto>CAR_SEQ</nomeOggetto>
-									<note>nessuna</note>
-					                <dropOggetto>N</dropOggetto>
-                					<tde>N</tde>
-                					<lungaDurata>N</lungaDurata>
-								</script>
-							</scripts>
-							<summary>
-								<appName>oracle</appName>
-							</summary>
-						</configuration>
-					</execution>
-				</executions>
+			<executions>
+				<execution>
+					<id>scripts-rest-service</id>
+					<phase>prepare-package</phase>
+					<goals>
+						<goal>db-zip</goal>
+					</goals>
+					<configuration>
+						<db>REST-SERVICE</db>
+						<scripts>
+							<!-- Fase 2: aggiungere qui gli script SQL del middleware
+							     (tabelle token, transazioni, audit, ecc.)
+							<script>
+								<file>${basedir}/src/main/sql/001_CREATE_TABLESPACE.sql</file>
+								<schema>SYS</schema>
+								<operazione>CREATE</operazione>
+								<oggetto>TABLESPACE</oggetto>
+								<nomeOggetto>TS_MYPAY</nomeOggetto>
+								<note>nessuna</note>
+								<dropOggetto>N</dropOggetto>
+								<tde>N</tde>
+								<lungaDurata>N</lungaDurata>
+							</script>
+							-->
+						</scripts>
+					</configuration>
+				</execution>
+			</executions>
 			</plugin>
 		</plugins>
 	</build>

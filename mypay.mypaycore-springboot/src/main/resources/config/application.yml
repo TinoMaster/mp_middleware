@@ -3,13 +3,13 @@
 # Configurazione applicativa - mypay.mypaycore Middleware
 # =============================================================================
 
-# --- Disabilitare DataSource (Fase 1: no persistenza DB) ---
+# --- Spring / JPA base ---
 spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    show-sql: false
 
 # --- Piattaforma Unitaria (pagoPA) ---
 piattaforma-unitaria:

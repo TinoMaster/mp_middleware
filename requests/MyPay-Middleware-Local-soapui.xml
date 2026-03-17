@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoapUI Project — MyPay Middleware Test Locale
+  =============================================
+  Pre-requisiti:
+    1. Applicazione avviata con profilo 'local': -\-spring.profiles.active=local
+    2. Server in ascolto su http://localhost:8080
+
+  Come importare in SoapUI:
+    File → Import Project → selezionare questo file
+
+  Test Cases disponibili:
+    1. Verifica Mock Attivo       → GET /mock/status
+    2. Health Check               → GET /actuator/health
+    3. OAuth2 Token Diretto       → POST /mock/pu/auth/oauth/token
+    4. SOAP Principale (Tipo O)   → POST /pu/sil/soap/reconciliation/...
+    5. SOAP Variante (Tipo F)     → POST /pu/sil/soap/reconciliation/...
+-->
+<con:soapui-project
+    xmlns:con="http://eviware.com/soapui/config"
+    id="mypay-middleware-local"
+    name="MyPay Middleware — Test Locale"
+    activeEnvironment="Default">
+
+  <!-- =========================================================
+       INTERFACCIA REST — Diagnostica e Mock diretti
+       ========================================================= -->
+  <con:interface name="REST - Diagnostica" type="wsdl:RestService" basePath="http://localhost:8080">
+
+    <!-- GET /mock/status -->
+    <con:resource name="Mock Status" path="/mock/status">
+      <con:method name="GET Mock Status" method="GET">
+        <con:request name="Verifica Mock Attivo" mediaType="application/json">
+          <con:settings/>
+        </con:request>
+      </con:method>
+    </con:resource>
+
+    <!-- GET /actuator/health -->
+    <con:resource name="Health" path="/actuator/health">
+      <con:method name="GET Health" method="GET">
+        <con:request name="Health Check Middleware" mediaType="application/json">
+          <con:settings/>
+        </con:request>
+      </con:method>
+    </con:resource>
+
+    <!-- POST /mock/pu/auth/oauth/token -->
+    <con:resource name="Mock OAuth2 Token" path="/mock/pu/auth/oauth/token">
+      <con:method name="POST OAuth2 Token" method="POST">
+        <con:request name="Richiesta Token Diretta" mediaType="application/x-www-form-urlencoded">
+          <con:settings/>
+          <con:requestContent>client_id=mock-client-id&amp;client_secret=mock-client-secret&amp;grant_type=client_credentials&amp;scope=openid</con:requestContent>
+          <con:requestHeaders>
+            <con:entry key="Content-Type" value="application/x-www-form-urlencoded"/>
+          </con:requestHeaders>
+        </con:request>
+      </con:method>
+    </con:resource>
+
+  </con:interface>
+
+  <!-- =========================================================
+       INTERFACCIA SOAP — Endpoint SIL (principale)
+       ========================================================= -->
+  <con:interface name="SOAP - Endpoint SIL" type="wsdl:DefinedService"
+      basePath="http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati">
+
+    <!-- pivotSILAutorizzaImportFlussoTesoreria — Tipo O (Ordinario) -->
+    <con:operation name="pivotSILAutorizzaImportFlussoTesoreria" isOneWay="false">
+
+      <con:request name="Flusso Tipo O — SELC_99999000013" mediaType="text/xml">
+        <con:settings/>
+        <con:endpoint>http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati</con:endpoint>
+        <con:requestContent><![CDATA[<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
+    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+
+    <soapenv:Header>
+        <ppt:intestazionePPT>
+            <codIpaEnte>SELC_99999000013</codIpaEnte>
+            <identificativoDominio>99999000013</identificativoDominio>
+            <identificativoIntermediarioPA>77777777777</identificativoIntermediarioPA>
+            <identificativoStazioneIntermediarioPA>77777777777_01</identificativoStazioneIntermediarioPA>
+        </ppt:intestazionePPT>
+    </soapenv:Header>
+
+    <soapenv:Body>
+        <ente:pivotSILAutorizzaImportFlussoTesoreria>
+            <password>BERGAMO</password>
+            <tipoFlusso>O</tipoFlusso>
+        </ente:pivotSILAutorizzaImportFlussoTesoreria>
+    </soapenv:Body>
+
+</soapenv:Envelope>]]></con:requestContent>
+        <con:requestHeaders>
+          <con:entry key="Content-Type" value="text/xml;charset=UTF-8"/>
+          <con:entry key="SOAPAction" value="pivotSILAutorizzaImportFlussoTesoreria"/>
+        </con:requestHeaders>
+      </con:request>
+
+      <!-- Variante Tipo F (Finanziario) -->
+      <con:request name="Flusso Tipo F — COMUNE_MILANO_001" mediaType="text/xml">
+        <con:settings/>
+        <con:endpoint>http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati</con:endpoint>
+        <con:requestContent><![CDATA[<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
+    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+
+    <soapenv:Header>
+        <ppt:intestazionePPT>
+            <codIpaEnte>COMUNE_MILANO_001</codIpaEnte>
+            <identificativoDominio>01199250158</identificativoDominio>
+            <identificativoIntermediarioPA>77777777777</identificativoIntermediarioPA>
+            <identificativoStazioneIntermediarioPA>77777777777_01</identificativoStazioneIntermediarioPA>
+        </ppt:intestazionePPT>
+    </soapenv:Header>
+
+    <soapenv:Body>
+        <ente:pivotSILAutorizzaImportFlussoTesoreria>
+            <password>MILANO</password>
+            <tipoFlusso>F</tipoFlusso>
+        </ente:pivotSILAutorizzaImportFlussoTesoreria>
+    </soapenv:Body>
+
+</soapenv:Envelope>]]></con:requestContent>
+        <con:requestHeaders>
+          <con:entry key="Content-Type" value="text/xml;charset=UTF-8"/>
+          <con:entry key="SOAPAction" value="pivotSILAutorizzaImportFlussoTesoreria"/>
+        </con:requestHeaders>
+      </con:request>
+
+    </con:operation>
+
+  </con:interface>
+
+</con:soapui-project>

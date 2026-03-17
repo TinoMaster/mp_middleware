@@ -12,7 +12,7 @@ Il progetto è stato generato dall'archetype **SpringLine2** (ARIA S.p.A.) con c
 |------|-------|-------------|
 | Fase 1 | ✅ Completata | Fondazioni: pulizia demo, struttura middleware, OAuth2, endpoint SOAP |
 | Fase 5 | ✅ Completata | Resilienza, gestione errori, health check, profili multi-ambiente, test unitari |
-| Fase 2 | ⬜ Da fare | Persistenza su database (Oracle) |
+| Fase 2 | ✅ Completata (plumbing) | Persistenza su database PostgreSQL — DataSource, HikariCP, JPA configurati; tabelle ancora da definire |
 | Fase 3 | ⬜ Da fare | Logica di business (riconciliazione, flussi tesoreria) |
 | Fase 4 | ⬜ Da fare | Endpoint SOAP aggiuntivi, contract-first con WSDL/XSD |
 | Fase 6 | ⬜ Da fare | Messaggistica asincrona (JMS/ActiveMQ) |
@@ -157,19 +157,27 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
 
 ---
 
-## Fase 2 - Persistenza Database ⬜ (Da Fare)
+## Fase 2 - Persistenza Database ✅ (Plumbing completato)
 
-**Obiettivo**: Riattivare il modulo DB con Oracle, creare tabelle per token e transazioni.
+**Obiettivo**: Configurare la connessione al database PostgreSQL e predisporre il layer JPA.
 
-### Attività previste:
-1. Riattivare dipendenze commentate: `springline2-data`, `ojdbc11`, `HikariCP`
-2. Rimuovere esclusione DataSource da `application.yml`
-3. Creare schema DB:
-   - Tabella `OAUTH_TOKEN_CACHE` (persistenza token tra riavvii)
+### Attività completate ✅
+
+1. Aggiunto `spring-boot-starter-data-jpa` e driver `postgresql` in `pom.xml` (rimossi i placeholder commentati Oracle/HikariCP)
+2. Rimossa l'esclusione `DataSourceAutoConfiguration` da `application.yml`; aggiunte proprietà JPA base (`ddl-auto: none`, `show-sql: false`, `open-in-view: false`)
+3. Creato `DataSourceConfig.java` — configurazione manuale HikariCP + `LocalContainerEntityManagerFactoryBean` + `JpaTransactionManager` (`@Primary`), legge `spring.datasource.pa.*`
+4. Aggiunto blocco `spring.datasource.pa.*` con credenziali reali PostgreSQL in `application-local.yml`
+5. Aggiunti placeholder `spring.datasource.pa.*` in `application-dev.yml`, `application-uat.yml`, `application-prod.yml`
+
+### Lavoro rimanente (schema DB) ⬜
+
+1. Creare script SQL in `mypay.mypaycore-db/src/main/sql/`:
    - Tabella `TRANSACTION_LOG` (log transazioni SIL ↔ Piattaforma)
    - Tabella `AUDIT_LOG` (audit eventi)
-4. Creare entity JPA e repository SpringLine2
-5. Configurare connessione Oracle per profili dev/uat/prod
+   - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` (persistenza token tra riavvii)
+2. Creare entity JPA (`@Entity`) in `it.ariaspa.mypay.mypaycore.api.domain`
+3. Creare repository Spring Data in `it.ariaspa.mypay.mypaycore.api.repository`
+4. Configurare credenziali PostgreSQL reali nei profili `dev`, `uat`, `prod`
 
 ### Decisioni da prendere:
 - Schema DB e naming conventions
@@ -246,4 +254,4 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 - Il parent POM corporate (`it.ariaspa:cm:1.0.0`) ha enforcer plugin che richiede OS Unix → usare `-Denforcer.skip=true` su Windows
 - `WsConfigurerAdapter` deprecato in Spring WS bundled con Spring Boot 3.5.5 → usato interfaccia `WsConfigurer`
 - `springline2-ws` è una libreria client SOAP, non server → aggiunto `spring-boot-starter-web-services` separatamente
-- DataSource auto-configuration esclusa esplicitamente finché le dipendenze DB sono commentate
+- DataSource configurato manualmente con prefisso `spring.datasource.pa.*` tramite `DataSourceConfig.java` (Spring Boot non auto-configura datasource con prefissi personalizzati)

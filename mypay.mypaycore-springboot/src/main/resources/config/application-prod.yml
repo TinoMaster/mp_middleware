@@ -6,6 +6,30 @@
 # ATTENZIONE: In produzione tutte le credenziali DEVONO essere fornite
 # tramite variabili d'ambiente o vault, MAI hardcoded.
 
+# =============================================================================
+# Profilo PROD - Produzione
+# =============================================================================
+# Attivare con: spring.profiles.active=prod
+#
+# ATTENZIONE: In produzione tutte le credenziali DEVONO essere fornite
+# tramite variabili d'ambiente o vault, MAI hardcoded.
+
+# --- Database PA (PostgreSQL) ---
+spring:
+  datasource:
+    pa:
+      driver-class-name: org.postgresql.Driver
+      url: ${DB_PA_URL}
+      username: ${DB_PA_USERNAME}
+      password: ${DB_PA_PASSWORD}
+      hikari:
+        minimum-idle: 5
+        maximum-pool-size: 20
+        connection-timeout: 30000
+        idle-timeout: 600000
+        max-lifetime: 1800000
+        pool-name: HikariPool-PA-prod
+
 piattaforma-unitaria:
   base-url: ${PIATTAFORMA_BASE_URL}
   auth:

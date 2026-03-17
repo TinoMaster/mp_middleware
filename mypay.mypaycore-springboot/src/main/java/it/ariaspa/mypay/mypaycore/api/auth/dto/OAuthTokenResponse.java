@@ -2,6 +2,11 @@ package it.ariaspa.mypay.mypaycore.api.auth.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 
 /**
  * DTO per la risposta dell'endpoint OAuth2 della Piattaforma Unitaria.
@@ -14,6 +19,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *   "expires_in": 3600
  * }
  */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString(exclude = "accessToken") // accessToken escluso per sicurezza: evita l'esposizione nei log
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OAuthTokenResponse {
 
@@ -34,46 +44,4 @@ public class OAuthTokenResponse {
      */
     @JsonProperty("expires_in")
     private long expiresIn;
-
-    public OAuthTokenResponse() {
-    }
-
-    public OAuthTokenResponse(String accessToken, String tokenType, long expiresIn) {
-        this.accessToken = accessToken;
-        this.tokenType = tokenType;
-        this.expiresIn = expiresIn;
-    }
-
-    public String getAccessToken() {
-        return accessToken;
-    }
-
-    public void setAccessToken(String accessToken) {
-        this.accessToken = accessToken;
-    }
-
-    public String getTokenType() {
-        return tokenType;
-    }
-
-    public void setTokenType(String tokenType) {
-        this.tokenType = tokenType;
-    }
-
-    public long getExpiresIn() {
-        return expiresIn;
-    }
-
-    public void setExpiresIn(long expiresIn) {
-        this.expiresIn = expiresIn;
-    }
-
-    @Override
-    public String toString() {
-        return "OAuthTokenResponse{" +
-                "tokenType='" + tokenType + '\'' +
-                ", expiresIn=" + expiresIn +
-                ", accessToken='[REDACTED]'" +
-                '}';
-    }
 }

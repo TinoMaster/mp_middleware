@@ -22,6 +22,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 
@@ -62,6 +63,7 @@ public class PiattaformaUnitariaClient {
     private final OAuthTokenService oAuthTokenService;
     private RestTemplate restTemplate;
 
+    @Autowired
     public PiattaformaUnitariaClient(PiattaformaUnitariaConfig config,
                                      OAuthTokenInterceptor oAuthTokenInterceptor,
                                      OAuthTokenService oAuthTokenService) {

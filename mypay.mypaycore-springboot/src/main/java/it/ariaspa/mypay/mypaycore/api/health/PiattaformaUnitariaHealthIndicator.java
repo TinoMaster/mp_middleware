@@ -44,10 +44,12 @@ public class PiattaformaUnitariaHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         String baseUrl = config.getBaseUrl();
+        // Usa /mock/status se siamo in modalità locale, altrimenti la base URL
+        String healthUrl = baseUrl.contains("/mock") ? baseUrl + "/status" : baseUrl;
 
         try {
             // Tentativo leggero di connessione alla piattaforma
-            healthCheckRestTemplate.getForEntity(baseUrl, String.class);
+            healthCheckRestTemplate.getForEntity(healthUrl, String.class);
             return Health.up()
                     .withDetail("url", baseUrl)
                     .withDetail("stato", "Piattaforma Unitaria raggiungibile")

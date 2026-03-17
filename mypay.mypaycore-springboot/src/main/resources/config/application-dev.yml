@@ -3,6 +3,30 @@
 # =============================================================================
 # Attivare con: spring.profiles.active=dev
 
+# =============================================================================
+# Profilo DEV - Sviluppo locale
+# =============================================================================
+# Attivare con: spring.profiles.active=dev
+
+# --- Database PA (PostgreSQL) ---
+spring:
+  datasource:
+    pa:
+      driver-class-name: org.postgresql.Driver
+      url: ${DB_PA_URL:jdbc:postgresql://localhost:5432/mypay4.pa}
+      username: ${DB_PA_USERNAME:mypay4.pa}
+      password: ${DB_PA_PASSWORD:mypay4.pa}
+      hikari:
+        minimum-idle: 1
+        maximum-pool-size: 5
+        pool-name: HikariPool-PA-dev
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        default_schema: mypay4
+
 piattaforma-unitaria:
   base-url: https://api.uat.p4pa.pagopa.it
   auth:

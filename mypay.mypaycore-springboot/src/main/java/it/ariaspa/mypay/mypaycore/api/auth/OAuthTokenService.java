@@ -16,6 +16,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import java.time.Instant;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -61,6 +63,7 @@ public class OAuthTokenService {
     /** Istante di scadenza del token corrente. */
     private volatile Instant tokenExpiryTime;
 
+    @Autowired
     public OAuthTokenService(PiattaformaUnitariaConfig config) {
         this.config = config;
         this.restTemplate = createRestTemplateWithTimeouts();

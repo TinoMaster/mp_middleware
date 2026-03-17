@@ -1,5 +1,7 @@
 package it.ariaspa.mypay.mypaycore.api.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -10,6 +12,8 @@ import org.springframework.context.annotation.Configuration;
  * Contiene le URL di base e le credenziali OAuth2 per l'autenticazione
  * tramite Client Credentials Flow.
  */
+@Getter
+@Setter
 @Configuration
 @ConfigurationProperties(prefix = "piattaforma-unitaria")
 public class PiattaformaUnitariaConfig {
@@ -24,25 +28,11 @@ public class PiattaformaUnitariaConfig {
      */
     private Auth auth = new Auth();
 
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    public void setBaseUrl(String baseUrl) {
-        this.baseUrl = baseUrl;
-    }
-
-    public Auth getAuth() {
-        return auth;
-    }
-
-    public void setAuth(Auth auth) {
-        this.auth = auth;
-    }
-
     /**
      * Configurazione dei parametri OAuth2 Client Credentials.
      */
+    @Getter
+    @Setter
     public static class Auth {
 
         /**
@@ -70,45 +60,5 @@ public class PiattaformaUnitariaConfig {
          * Scope OAuth2 (default: openid).
          */
         private String scope = "openid";
-
-        public String getTokenUrl() {
-            return tokenUrl;
-        }
-
-        public void setTokenUrl(String tokenUrl) {
-            this.tokenUrl = tokenUrl;
-        }
-
-        public String getClientId() {
-            return clientId;
-        }
-
-        public void setClientId(String clientId) {
-            this.clientId = clientId;
-        }
-
-        public String getClientSecret() {
-            return clientSecret;
-        }
-
-        public void setClientSecret(String clientSecret) {
-            this.clientSecret = clientSecret;
-        }
-
-        public String getGrantType() {
-            return grantType;
-        }
-
-        public void setGrantType(String grantType) {
-            this.grantType = grantType;
-        }
-
-        public String getScope() {
-            return scope;
-        }
-
-        public void setScope(String scope) {
-            this.scope = scope;
-        }
     }
 }
