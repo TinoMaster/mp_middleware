@@ -571,7 +571,81 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
 ## 11. Resilienza
 
-Il middleware implementa resilienza tramite **Resilience4j** applicato al metodo `PiattaformaUnitariaClient.forwardSoapRequest()`.
+Il middleware implementa la resilienza tramite la libreria **Resilience4j** (versione Spring Boot 3), applicata al metodo `PiattaformaUnitariaClient.forwardSoapRequest()`.
+
+### Cos'è Resilience4j e come si usa
+
+**Resilience4j** è una libreria Java leggera e modulare per la resilienza delle applicazioni distribuite. È progettata per funzionare con programmazione funzionale (lambda) e si integra nativamente con Spring Boot 3 tramite il modulo `resilience4j-spring-boot3`.
+
+La libreria fornisce i seguenti pattern di resilienza:
+
+| Pattern | Descrizione |
+|---------|-------------|
+| **Circuit Breaker** | Apre il circuito quando ci sono troppi errori consecutivi, impedendo ulteriori chiamate a un servizio non disponibile. Dopo un periodo di attesa, permette alcune chiamate di test ("half-open") per verificare se il servizio è tornato disponibile. |
+| **Retry** | Riprova automaticamente le operazioni fallite con diversi strategie di backoff (lineare, esponenziale, fisso). |
+| **Rate Limiter** | Limita il numero di chiamate in un intervallo di tempo configurabile. |
+| **Bulkhead** | Isola le risorse per evitare che un errore in un componente si propaghi a tutto il sistema. |
+
+#### Dipendenza Maven
+
+```xml
+<dependency>
+    <groupId>io.github.resilience4j</groupId>
+    <artifactId>resilience4j-spring-boot3</artifactId>
+    <version>2.2.0</version>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-aop</artifactId>
+</dependency>
+```
+
+La dipendenza `spring-boot-starter-aop` è necessaria perché Resilience4j utilizza AspectJ per intercettare le chiamate ai metodi annotati.
+
+#### Utilizzo nel codice
+
+I pattern di resilienza si applicano tramite **annotazioni** sui metodi. Nel progetto, il `PiattaformaUnitariaClient.forwardSoapRequest()` è decorato con:
+
+```java
+@CircuitBreaker(name = "piattaformaUnitaria", fallbackMethod = "forwardSoapRequestFallback")
+@Retry(name = "piattaformaUnitaria")
+public String forwardSoapRequest(String path, String soapXml) { ... }
+```
+
+- **`@CircuitBreaker(name = "piattaformaUnitaria")`**: Applica il circuit breaker denominato "piattaformaUnitaria". Se il circuit breaker è aperto, non chiama il metodo ma invoca direttamente il metodo di fallback.
+- **`fallbackMethod = "forwardSoapRequestFallback"`**: Specifica il metodo da chiamare quando il circuit breaker è aperto o la chiamata fallisce. Il fallback deve avere la stessa firma del metodo originale più un parametro `Throwable` per l'eccezione.
+- **`@Retry(name = "piattaformaUnitaria")`**: Applica la strategia di retry denominata "piattaformaUnitaria".
+
+#### Configurazione
+
+La configurazione avviene nel file `application.yml` sotto la chiave `resilience4j`:
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      piattaformaUnitaria:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    instances:
+      piattaformaUnitaria:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+```
+
+#### Monitoraggio
+
+Resilience4j espone le metriche tramite Spring Boot Actuator. Gli endpoint disponibili sono:
+
+- `/actuator/circuitbreakers`: Stato dei circuit breaker
+- `/actuator/retries`: Statistiche dei retry
+- `/actuator/circuitbreakers/events`: Eventi di transizione degli stati
 
 ### Circuit Breaker (`piattaformaUnitaria`)
 
