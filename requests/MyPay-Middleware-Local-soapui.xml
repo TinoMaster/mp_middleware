@@ -74,8 +74,8 @@
         <con:endpoint>http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati</con:endpoint>
         <con:requestContent><![CDATA[<soapenv:Envelope
     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
-    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
 
     <soapenv:Header>
         <ppt:intestazionePPT>
@@ -106,8 +106,8 @@
         <con:endpoint>http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati</con:endpoint>
         <con:requestContent><![CDATA[<soapenv:Envelope
     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
-    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
 
     <soapenv:Header>
         <ppt:intestazionePPT>

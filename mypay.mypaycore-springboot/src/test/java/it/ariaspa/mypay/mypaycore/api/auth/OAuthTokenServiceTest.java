@@ -28,6 +28,10 @@ import static org.mockito.Mockito.*;
  * - Refresh forzato del token
  * - Gestione errori (risposta vuota, eccezioni RestClient)
  * - Margine di scadenza
+ *
+ * NOTA: OAuthTokenService invia i parametri OAuth2 come query string nell'URL
+ * (non come form body), come richiesto dalla Piattaforma Unitaria.
+ * I mock usano argThat(url -> url.startsWith(TOKEN_URL)) per il matching dell'URL.
  */
 @ExtendWith(MockitoExtension.class)
 class OAuthTokenServiceTest {
@@ -58,25 +62,70 @@ class OAuthTokenServiceTest {
         service = new OAuthTokenService(config, restTemplate);
     }
 
+    /**
+     * Helper: configura il mock del RestTemplate per restituire una risposta token.
+     * L'URL viene matchato con startsWith(TOKEN_URL) perche i parametri OAuth2
+     * vengono aggiunti come query string (es. ?client_id=...&client_secret=...).
+     */
+    private void stubTokenRequest(ResponseEntity<OAuthTokenResponse> response) {
+        when(restTemplate.postForEntity(
+                argThat((String url) -> url != null && url.startsWith(TOKEN_URL)),
+                any(HttpEntity.class),
+                eq(OAuthTokenResponse.class)))
+                .thenReturn(response);
+    }
+
+    /**
+     * Helper: configura il mock per restituire risposte sequenziali (prima chiamata, seconda chiamata).
+     */
+    private void stubTokenRequestSequential(ResponseEntity<OAuthTokenResponse> first,
+                                             ResponseEntity<OAuthTokenResponse> second) {
+        when(restTemplate.postForEntity(
+                argThat((String url) -> url != null && url.startsWith(TOKEN_URL)),
+                any(HttpEntity.class),
+                eq(OAuthTokenResponse.class)))
+                .thenReturn(first)
+                .thenReturn(second);
+    }
+
+    /**
+     * Helper: configura il mock per lanciare un'eccezione.
+     */
+    private void stubTokenRequestThrow(RestClientException exception) {
+        when(restTemplate.postForEntity(
+                argThat((String url) -> url != null && url.startsWith(TOKEN_URL)),
+                any(HttpEntity.class),
+                eq(OAuthTokenResponse.class)))
+                .thenThrow(exception);
+    }
+
+    /**
+     * Helper: verifica che il RestTemplate sia stato invocato N volte con URL che inizia per TOKEN_URL.
+     */
+    private void verifyTokenRequestCount(int times) {
+        verify(restTemplate, times(times)).postForEntity(
+                argThat((String url) -> url != null && url.startsWith(TOKEN_URL)),
+                any(HttpEntity.class),
+                eq(OAuthTokenResponse.class));
+    }
+
     @Test
     @DisplayName("getAccessToken - richiede nuovo token quando cache e vuota")
     void getAccessToken_requestsNewToken_whenCacheIsEmpty() {
         OAuthTokenResponse tokenResponse = new OAuthTokenResponse(MOCK_TOKEN, "Bearer", EXPIRES_IN);
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
 
         String token = service.getAccessToken();
 
         assertEquals(MOCK_TOKEN, token);
-        verify(restTemplate, times(1)).postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class));
+        verifyTokenRequestCount(1);
     }
 
     @Test
     @DisplayName("getAccessToken - restituisce token dalla cache alla seconda chiamata")
     void getAccessToken_returnsCachedToken_onSubsequentCalls() {
         OAuthTokenResponse tokenResponse = new OAuthTokenResponse(MOCK_TOKEN, "Bearer", EXPIRES_IN);
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
 
         // Prima chiamata: richiede token
         String token1 = service.getAccessToken();
@@ -86,7 +135,7 @@ class OAuthTokenServiceTest {
         assertEquals(MOCK_TOKEN, token1);
         assertEquals(MOCK_TOKEN, token2);
         // RestTemplate invocato solo una volta (la seconda usa la cache)
-        verify(restTemplate, times(1)).postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class));
+        verifyTokenRequestCount(1);
     }
 
     @Test
@@ -95,9 +144,9 @@ class OAuthTokenServiceTest {
         OAuthTokenResponse firstToken = new OAuthTokenResponse(MOCK_TOKEN, "Bearer", EXPIRES_IN);
         OAuthTokenResponse secondToken = new OAuthTokenResponse("new-token", "Bearer", EXPIRES_IN);
 
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(firstToken, HttpStatus.OK))
-                .thenReturn(new ResponseEntity<>(secondToken, HttpStatus.OK));
+        stubTokenRequestSequential(
+                new ResponseEntity<>(firstToken, HttpStatus.OK),
+                new ResponseEntity<>(secondToken, HttpStatus.OK));
 
         // Prima chiamata
         String token1 = service.getAccessToken();
@@ -106,14 +155,13 @@ class OAuthTokenServiceTest {
 
         assertEquals(MOCK_TOKEN, token1);
         assertEquals("new-token", token2);
-        verify(restTemplate, times(2)).postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class));
+        verifyTokenRequestCount(2);
     }
 
     @Test
     @DisplayName("getAccessToken - lancia PiattaformaAuthenticationException su risposta null")
     void getAccessToken_throwsException_whenResponseBodyIsNull() {
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(null, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(null, HttpStatus.OK));
 
         assertThrows(PiattaformaAuthenticationException.class, () -> service.getAccessToken());
     }
@@ -122,8 +170,7 @@ class OAuthTokenServiceTest {
     @DisplayName("getAccessToken - lancia PiattaformaAuthenticationException su access_token null")
     void getAccessToken_throwsException_whenAccessTokenIsNull() {
         OAuthTokenResponse emptyResponse = new OAuthTokenResponse(null, "Bearer", EXPIRES_IN);
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(emptyResponse, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(emptyResponse, HttpStatus.OK));
 
         assertThrows(PiattaformaAuthenticationException.class, () -> service.getAccessToken());
     }
@@ -131,8 +178,7 @@ class OAuthTokenServiceTest {
     @Test
     @DisplayName("getAccessToken - lancia PiattaformaAuthenticationException su errore di rete")
     void getAccessToken_throwsException_whenRestClientFails() {
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenThrow(new RestClientException("Connection refused"));
+        stubTokenRequestThrow(new RestClientException("Connection refused"));
 
         PiattaformaAuthenticationException ex = assertThrows(
                 PiattaformaAuthenticationException.class,
@@ -145,8 +191,7 @@ class OAuthTokenServiceTest {
     @DisplayName("invalidateToken - il prossimo getAccessToken richiede un nuovo token")
     void invalidateToken_causesNewTokenRequest() {
         OAuthTokenResponse tokenResponse = new OAuthTokenResponse(MOCK_TOKEN, "Bearer", EXPIRES_IN);
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
 
         service.getAccessToken();
         service.invalidateToken();
@@ -164,8 +209,7 @@ class OAuthTokenServiceTest {
     @DisplayName("isTokenValid - ritorna true dopo aver ottenuto un token valido")
     void isTokenValid_returnsTrue_afterSuccessfulTokenRequest() {
         OAuthTokenResponse tokenResponse = new OAuthTokenResponse(MOCK_TOKEN, "Bearer", EXPIRES_IN);
-        when(restTemplate.postForEntity(eq(TOKEN_URL), any(HttpEntity.class), eq(OAuthTokenResponse.class)))
-                .thenReturn(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
+        stubTokenRequest(new ResponseEntity<>(tokenResponse, HttpStatus.OK));
 
         service.getAccessToken();
 

@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.0.0  
+**Versione**: 1.1.0  
 **Data**: Marzo 2026  
-**Stato**: Prima fase completata — Fondazioni operative
+**Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
 ---
 
@@ -51,29 +51,40 @@ Ente Pubblico (SIL)
        │
        │  SOAP Request
        │  POST /pu/sil/soap/reconciliation/...
-       │  Header: Authorization: Bearer <token-SIL>
-       │  Body: <soapenv:Envelope>...</soapenv:Envelope>
+       │  Content-Type: text/xml
+       │  Body: <soapenv:Envelope>
+       │          <Header><codIpaEnte>...</codIpaEnte></Header>
+       │          <Body><password>...</password></Body>
+       │        </soapenv:Envelope>
        ▼
 ┌─────────────────────────────────────────┐
 │         MIDDLEWARE (questo progetto)    │
 │                                         │
-│  1. Valida il token Bearer del SIL      │
-│  2. Estrae il payload SOAP              │
+│  1. Riceve la richiesta SOAP            │
+│  2. Estrae l'Envelope completo          │
+│     (Header + Body)                     │
 │  3. Ottiene token OAuth2 da pagoPA      │
 │     (o lo usa dalla cache)              │
-│  4. Inoltra la richiesta autenticata    │
+│  4. Inoltra l'Envelope completo         │
+│     con Bearer token OAuth2             │
 │  5. Riceve la risposta                  │
-│  6. Restituisce la risposta al SIL      │
+│  6. Estrae il body dalla risposta       │
+│  7. Restituisce la risposta al SIL      │
 └─────────────────────────────────────────┘
        │
        │  POST /pu/sil/soap/...
        │  Header: Authorization: Bearer <token-OAuth2>
+       │  Body: Envelope SOAP completo (stesso del SIL)
        ▼
 Piattaforma Unitaria (pagoPA)
        │
        ▼
      pagoPA
 ```
+
+> **NOTA IMPORTANTE**: Il SIL **NON** invia un JWT/Bearer token. L'autenticazione del SIL
+> avviene tramite `codIpaEnte` (nell'Header SOAP) e `password` (nel Body SOAP).
+> Il middleware gestisce internamente l'autenticazione OAuth2 verso la Piattaforma Unitaria.
 
 ---
 
@@ -336,9 +347,10 @@ getAccessToken() chiamato
         ▼
    Double-check: token ancora non valido?
         │
-   Sì ──┤──► POST token-url con client_credentials
-        │     Header: Content-Type: application/x-www-form-urlencoded
-        │     Body: client_id=...&client_secret=...&grant_type=client_credentials&scope=openid
+    Sì ──┤──► POST token-url con client_credentials
+         │     I parametri OAuth2 vengono inviati come **query string** nell'URL:
+         │     POST token-url?client_id=...&client_secret=...&grant_type=client_credentials&scope=openid
+         │     NOTA: la PU restituisce 404 se i parametri vengono inviati come body form-urlencoded
         │
         ▼
    Salva token + calcola scadenza
@@ -428,7 +440,8 @@ Richiesta SOAP ricevuta
 **Scopo**: Riceve le richieste SOAP dai SIL e le inoltra alla Piattaforma Unitaria.
 
 **Dettagli tecnici**:
-- Namespace: `http://www.regione.lombardia.it/mypay/ente`
+- Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
+- Header namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead`
 - Local part: `pivotSILAutorizzaImportFlussoTesoreria`
 - Path di ricezione: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
 
@@ -436,13 +449,12 @@ Richiesta SOAP ricevuta
 ```xml
 <soapenv:Envelope
     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
-    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
 
     <soapenv:Header>
         <ppt:intestazionePPT>
             <codIpaEnte>SELC_99999000013</codIpaEnte>
-            <identificativoDominio>99999000013</identificativoDominio>
         </ppt:intestazionePPT>
     </soapenv:Header>
 
@@ -456,13 +468,20 @@ Richiesta SOAP ricevuta
 </soapenv:Envelope>
 ```
 
-**Flusso interno dell'endpoint**:
-1. Spring WS estrae il `<Body>` dalla SOAP Envelope e passa il payload come `Element` al metodo
-2. L'endpoint converte l'`Element` in stringa XML
-3. Chiama `piattaformaClient.forwardSoapRequest(path, xmlString)`
-4. Riceve la risposta XML dalla piattaforma
-5. Converte la stringa XML di risposta in `Element` e la restituisce
-6. Spring WS avvolge l'Element in una SOAP Envelope e invia la risposta al SIL
+**Flusso interno dell'endpoint (proxy trasparente)**:
+1. Spring WS intercetta la richiesta SOAP in base al namespace/localPart
+2. L'endpoint riceve anche il `MessageContext`, da cui estrae il **SOAP Envelope completo** (Header + Body)
+3. L'Envelope viene serializzato in stringa XML tramite `SoapMessage.writeTo()`
+4. Chiama `piattaformaClient.forwardSoapRequest(path, envelopeXml)` — inoltra l'**intero Envelope**
+5. Riceve la risposta SOAP dalla PU (anch'essa un Envelope completo)
+6. Estrae il contenuto del `<Body>` dalla risposta con `extractBodyContent()`
+7. Converte il body in `Element` e lo restituisce a Spring WS
+8. Spring WS ri-avvolge l'Element in un nuovo SOAP Envelope e lo invia al SIL
+
+> **NOTA**: Questo approccio "proxy trasparente" è necessario perché la PU richiede
+> l'Header SOAP con `codIpaEnte` per identificare l'ente. Se si inoltrasse solo il
+> Body (come farebbe un `@PayloadRoot` standard), la PU non saprebbe quale ente sta
+> effettuando la richiesta.
 
 **Sicurezza XML (prevenzione attacchi XXE)**:
 Il parser XML è configurato con tutte le protezioni contro gli attacchi XXE (XML External Entity):
@@ -498,7 +517,7 @@ Il parser XML è configurato con tutte le protezioni contro gli attacchi XXE (XM
     <faultcode>env:Server</faultcode>
     <faultstring xml:lang="it">Errore di comunicazione con la Piattaforma Unitaria: ...</faultstring>
     <detail>
-        <fault:errorCode xmlns:fault="http://www.regione.lombardia.it/mypay/fault">
+        <fault:errorCode xmlns:fault="http://www.regione.veneto.it/pagamenti/pivot/ente/fault">
             COMM_ERROR
         </fault:errorCode>
     </detail>
@@ -714,8 +733,12 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 **Esempio di risposta mock**:
 ```xml
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
-    <soapenv:Header/>
+                  xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
+    <soapenv:Header>
+        <ppthead:intestazionePPT xmlns:ppthead="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead">
+            <codIpaEnte>SELC_99999000013</codIpaEnte>
+        </ppthead:intestazionePPT>
+    </soapenv:Header>
     <soapenv:Body>
         <ente:pivotSILAutorizzaImportFlussoTesoreria_RPT_risposta>
             <codIpaEnte>SELC_99999000013</codIpaEnte>
@@ -739,7 +762,7 @@ Il progetto supporta cinque profili Spring, ognuno con una configurazione specif
 | Profilo | Attivazione | Piattaforma target | Sicurezza | Logging |
 |---------|------------|-------------------|-----------|---------|
 | `local` | Sviluppo senza rete esterna | Mock interno (localhost) | Disabilitata (tutto anonymous) | DEBUG |
-| `dev` | Sviluppo con UAT reale | `api.uat.p4pa.pagopa.it` | JWT abilitato | DEBUG |
+| `dev` | Sviluppo con UAT reale | `api.uat.p4pa.pagopa.it` | JWT disabilitato (anonymous) | DEBUG |
 | `uat` | Test di accettazione | `api.uat.p4pa.pagopa.it` | JWT abilitato | INFO |
 | `prod` | Produzione | URL da env var | JWT abilitato + segreti da env var | WARN |
 | *(default)* | Base (esteso dagli altri) | `api.uat.p4pa.pagopa.it` | JWT su `/pu/sil/soap/**` | INFO |
@@ -767,10 +790,13 @@ Il progetto supporta cinque profili Spring, ognuno con una configurazione specif
 
 **Caratteristiche**:
 - Punta all'ambiente UAT reale (`api.uat.p4pa.pagopa.it`)
-- Credenziali OAuth2 leggibili da `application-dev.yml` o env var
-- Logging DEBUG per il codice del middleware e Spring WS
-- Actuator health con dettagli sempre visibili
+- Credenziali OAuth2 dal file `.env` o variabile d'ambiente `PIATTAFORMA_CLIENT_SECRET`
+- **Sicurezza JWT disabilitata** — i SIL non inviano JWT; l'autenticazione avviene tramite `codIpaEnte` + `password` nel body SOAP
+- Configurazione `spl.security`: `jwt.enabled: false`, `anonymous` per `/**`
+- Logging DEBUG per il codice del middleware, Spring WS e RestTemplate
+- Actuator health con dettagli sempre visibili (`show-details: always`)
 - Resilience4j con parametri rilassati per non ostacolare il debugging
+- Database PostgreSQL locale (`localhost:5432/mypay_local_copy`)
 
 ---
 
@@ -825,7 +851,7 @@ Il progetto supporta cinque profili Spring, ognuno con una configurazione specif
 
 ## 14. Test Unitari
 
-Il progetto ha **19 test unitari** suddivisi in 3 classi, tutti con risultato BUILD SUCCESS.
+Il progetto ha **22 test unitari** suddivisi in 3 classi, tutti con risultato BUILD SUCCESS.
 
 ### `OAuthTokenServiceTest` — 9 test
 
@@ -843,6 +869,9 @@ Testa il servizio di autenticazione OAuth2 in isolamento completo (nessuna chiam
 | `shouldThrowExceptionWhenAccessTokenIsNull` | Gestione risposta senza `access_token` |
 | `isTokenValid_returnsFalseWhenNoToken` | `isTokenValid()` ritorna false senza token in cache |
 
+> **Nota**: I mock degli stub per l'URL del token usano `argThat(url -> url.startsWith(TOKEN_URL))`
+> invece di `eq(TOKEN_URL)` perché ora l'URL include i parametri OAuth2 come query string.
+
 ### `PiattaformaUnitariaClientTest` — 7 test
 
 Testa il client HTTP verso la Piattaforma Unitaria.
@@ -857,21 +886,21 @@ Testa il client HTTP verso la Piattaforma Unitaria.
 | `shouldUseFallbackWhenCircuitBreakerOpen` | Circuit breaker aperto: usa il fallback |
 | `shouldBuildCorrectUrl` | URL costruito correttamente come baseUrl + path |
 
-### `ReconciliationEndpointTest` — 3 test
+### `ReconciliationEndpointTest` — 6 test
 
-Testa l'endpoint SOAP di riconciliazione.
+Testa l'endpoint SOAP di riconciliazione con approccio proxy trasparente.
 
 | Test | Cosa verifica |
 |------|---------------|
-| `shouldForwardRequestAndReturnResponse` | Flusso completo: riceve SOAP, inoltra, restituisce risposta |
-| `shouldHandleExceptionFromClient` | Eccezione dal client: rilancia come RuntimeException |
-| `shouldPreserveNamespacesInResponse` | Il namespace XML viene preservato nella risposta |
+| `handleReconciliationRequest_forwardsFullEnvelopeAndReturnsResponse` | Flusso completo: estrae Envelope dal MessageContext, inoltra alla PU, estrae body dalla risposta |
+| `handleReconciliationRequest_throwsRuntimeException_onClientError` | Eccezione dal client: rilancia come RuntimeException |
+| `handleReconciliationRequest_usesCorrectServicePath` | Il path di inoltro è quello corretto (`/pu/sil/soap/reconciliation/...`) |
+| `handleReconciliationRequest_forwardsFullEnvelopeXml` | L'XML inoltrato contiene l'Envelope completo (Header + Body), non solo il Body |
+| `handleReconciliationRequest_extractsBodyFromPUResponse` | Il body estratto dalla risposta PU è corretto (solo contenuto del Body) |
+| `constants_haveCorrectValues` | Le costanti di namespace e path hanno i valori corretti (Veneto) |
 
-### Strategia di testabilità
-
-`OAuthTokenService` e `PiattaformaUnitariaClient` hanno un **costruttore package-private** aggiuntivo che accetta un `RestTemplate` come parametro. Questo permette ai test di iniettare un `RestTemplate` mockato senza modificare il costruttore principale usato da Spring.
-
-Il costruttore Spring è marcato con `@Autowired` per disambiguare (necessario perché esistono due costruttori).
+> **Nota**: I test mockano `MessageContext` e `SoapMessage` per simulare l'estrazione
+> dell'Envelope SOAP completo, replicando il comportamento reale di Spring WS.
 
 ---
 
@@ -907,6 +936,15 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn clean install -Denf
 cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=local"
 ```
 
+### Avvio in modalità dev (connessione a PU UAT reale)
+
+```bash
+cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& set PIATTAFORMA_CLIENT_SECRET=<client-secret>&& mvn spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=dev"
+```
+
+> **NOTA**: Sostituire `<client-secret>` con il valore reale. Le credenziali sono nel file `.env` (gitignored).
+> Richiede PostgreSQL attivo su `localhost:5432/mypay_local_copy`.
+
 ### Configurazione IntelliJ IDEA
 
 1. **Run → Edit Configurations → + → Maven**
@@ -923,9 +961,11 @@ Il POM padre corporativo (`it.ariaspa:cm:1.0.0`) ha un plugin enforcer che verif
 
 ## 16. Come testare il flusso completo
 
+### 16.1 Test con profilo `local` (mock interno)
+
 Con l'applicazione avviata in profilo `local` su `http://localhost:8080`:
 
-### Passo 1 — Verifica che il mock sia attivo
+#### Passo 1 — Verifica che il mock sia attivo
 
 ```
 GET http://localhost:8080/mock/status
@@ -939,13 +979,13 @@ Risposta attesa:
 }
 ```
 
-### Passo 2 — Health check del middleware
+#### Passo 2 — Health check del middleware
 
 ```
 GET http://localhost:8080/actuator/health
 ```
 
-### Passo 3 — Chiamata SOAP principale (simula un SIL)
+#### Passo 3 — Chiamata SOAP principale (simula un SIL)
 
 Importare in **Postman**: `requests/MyPay-Middleware-Local.postman_collection.json`  
 Importare in **SoapUI**: `requests/MyPay-Middleware-Local-soapui.xml`
@@ -962,8 +1002,8 @@ Body:
 ```xml
 <soapenv:Envelope
     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:ppt="http://www.regione.lombardia.it/mypay/ppt"
-    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
+    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
     <soapenv:Header>
         <ppt:intestazionePPT>
             <codIpaEnte>SELC_99999000013</codIpaEnte>
@@ -988,6 +1028,108 @@ Postman → ReconciliationEndpoint (Spring WS)
                 → POST /mock/pu/sil/soap/...  ← risposta SOAP mock
             → risposta SOAP a Postman
 ```
+
+---
+
+### 16.2 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
+
+Con l'applicazione avviata in profilo `dev` su `http://localhost:8080`:
+
+#### Pre-requisiti
+
+1. PostgreSQL attivo su `localhost:5432/mypay_local_copy` (user: admin, password: admin)
+2. Variabile d'ambiente `PIATTAFORMA_CLIENT_SECRET` impostata con il client-secret OAuth2 reale
+3. Connettività di rete verso `api.uat.p4pa.pagopa.it`
+
+#### Avvio
+
+```bash
+cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& set PIATTAFORMA_CLIENT_SECRET=<client-secret>&& mvn spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=dev"
+```
+
+#### Passo 1 — Health check
+
+```
+GET http://localhost:8080/actuator/health
+```
+
+Risposta attesa (componenti chiave):
+- `db`: UP — PostgreSQL connesso
+- `piattaformaUnitaria`: UP — PU UAT raggiungibile
+- `OAuthToken`: DOWN al primo avvio (normale — il token viene acquisito alla prima richiesta SOAP)
+
+#### Passo 2 — Chiamata SOAP reale verso PU
+
+Importare in **Postman**: `requests/MyPay-Middleware-Dev.postman_collection.json`
+
+Oppure chiamata diretta:
+
+```
+POST http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati
+Content-Type: text/xml;charset=UTF-8
+```
+
+Body:
+```xml
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
+    <soapenv:Header>
+        <ppt:intestazionePPT>
+            <codIpaEnte>SELC_99999000013</codIpaEnte>
+        </ppt:intestazionePPT>
+    </soapenv:Header>
+    <soapenv:Body>
+        <ente:pivotSILAutorizzaImportFlussoTesoreria>
+            <password>BERGAMO</password>
+            <tipoFlusso>O</tipoFlusso>
+        </ente:pivotSILAutorizzaImportFlussoTesoreria>
+    </soapenv:Body>
+</soapenv:Envelope>
+```
+
+**Risposta attesa dalla PU reale** (HTTP 200):
+```xml
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+    <SOAP-ENV:Header/>
+    <SOAP-ENV:Body>
+        <ns3:pivotSILAutorizzaImportFlussoTesoreriaRisposta
+            xmlns:ns3="http://www.regione.veneto.it/pagamenti/pivot/ente/">
+            <uploadUrl>https://api.uat.p4pa.pagopa.it/pu/fileshare/organization/...</uploadUrl>
+            <authorizationToken>AUTHORIZATIONTOKEN</authorizationToken>
+            <requestToken>XXXX</requestToken>
+            <importPath>/IMPORTPATH</importPath>
+        </ns3:pivotSILAutorizzaImportFlussoTesoreriaRisposta>
+    </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+```
+
+**Flusso interno reale**:
+```
+Postman → ReconciliationEndpoint (Spring WS)
+            → estrae Envelope SOAP completo (Header + Body)
+            → PiattaformaUnitariaClient.forwardSoapRequest()
+                → OAuthTokenInterceptor.intercept()
+                    → OAuthTokenService.getAccessToken()
+                        → POST api.uat.p4pa.pagopa.it/pu/auth/oauth/token?client_id=...&...
+                        ← Token OAuth2 reale (validità ~4 ore)
+                → POST api.uat.p4pa.pagopa.it/pu/sil/soap/reconciliation/...
+                   (con Authorization: Bearer <token-reale>)
+                ← Risposta SOAP reale dalla PU
+            → estrae body dalla risposta PU
+            → risposta SOAP a Postman
+```
+
+#### Passo 3 — Verifica token in cache
+
+Dopo la prima richiesta SOAP, verificare che il token sia stato acquisito:
+
+```
+GET http://localhost:8080/actuator/health/OAuthToken
+```
+
+Risposta attesa: `{"status":"UP","details":{"stato":"Token OAuth2 in cache valido"}}`
 
 ---
 

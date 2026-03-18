@@ -3,10 +3,12 @@ package it.ariaspa.mypay.mypaycore.api.soap.endpoint;
 import it.ariaspa.mypay.mypaycore.api.client.PiattaformaUnitariaClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ws.context.MessageContext;
 import org.springframework.ws.server.endpoint.annotation.Endpoint;
 import org.springframework.ws.server.endpoint.annotation.PayloadRoot;
 import org.springframework.ws.server.endpoint.annotation.RequestPayload;
 import org.springframework.ws.server.endpoint.annotation.ResponsePayload;
+import org.springframework.ws.soap.SoapMessage;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.xml.sax.InputSource;
@@ -18,8 +20,10 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+import java.io.ByteArrayOutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Endpoint SOAP per la riconciliazione dei pagamenti telematici.
@@ -29,19 +33,28 @@ import java.io.StringWriter;
  *
  * Flusso:
  * 1. Il SIL invia una richiesta SOAP a questo endpoint
- * 2. L'endpoint estrae il payload XML dalla richiesta
- * 3. La richiesta viene inoltrata alla Piattaforma Unitaria (autenticata tramite OAuth2)
+ * 2. L'endpoint cattura l'intero SOAP Envelope (Header + Body) dal MessageContext
+ * 3. L'Envelope completo viene inoltrato alla Piattaforma Unitaria (autenticata tramite OAuth2)
  * 4. La risposta della piattaforma viene restituita al SIL
+ *
+ * IMPORTANTE: Il SIL invia nell'Header SOAP il codIpaEnte (namespace ppthead) che
+ * identifica l'ente. La PU richiede l'Envelope completo con Header e Body.
+ * Per questo motivo, l'endpoint utilizza il MessageContext per estrarre l'intero
+ * messaggio SOAP e inoltrarlo alla PU cosi com'e (approccio transparent proxy).
  *
  * Endpoint URI: /pu/sil/soap/reconciliation
  * Esempio di richiesta: pivotSILAutorizzaImportFlussoTesoreria
+ *
+ * Namespace PU:
+ * - Header: http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead
+ * - Body:   http://www.regione.veneto.it/pagamenti/pivot/ente/
  *
  * Sicurezza XML:
  * - Prevenzione XXE (XML External Entity) attacks
  * - Disabilitazione DTD e entity esterne nel parser XML
  * - TransformerFactory sicura senza accesso a DTD/stylesheet esterni
  *
- * Fase 1: Approccio contract-last semplificato.
+ * Fase 1: Approccio contract-last semplificato con transparent proxy.
  */
 @Endpoint
 public class ReconciliationEndpoint {
@@ -49,10 +62,15 @@ public class ReconciliationEndpoint {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationEndpoint.class);
 
     /**
-     * Namespace URI per le operazioni di riconciliazione.
-     * Da aggiornare con il namespace reale del WSDL della Piattaforma Unitaria.
+     * Namespace URI per le operazioni di riconciliazione (body della PU).
+     * Corrisponde al namespace reale usato dalla Piattaforma Unitaria pagoPA.
      */
-    static final String NAMESPACE_URI = "http://www.regione.lombardia.it/mypay/ente";
+    static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/pivot/ente/";
+
+    /**
+     * Namespace URI per l'header SOAP della PU (intestazionePPT con codIpaEnte).
+     */
+    static final String HEADER_NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead";
 
     /**
      * Percorso relativo dell'endpoint di riconciliazione sulla Piattaforma Unitaria.
@@ -77,32 +95,40 @@ public class ReconciliationEndpoint {
     /**
      * Gestisce la richiesta SOAP pivotSILAutorizzaImportFlussoTesoreria.
      *
-     * Riceve il payload XML dalla richiesta SOAP del SIL, lo converte in stringa,
+     * Cattura l'intero SOAP Envelope dal MessageContext (incluso l'Header con codIpaEnte),
      * lo inoltra alla Piattaforma Unitaria e restituisce la risposta come elemento DOM.
      *
-     * @param requestPayload l'elemento XML della richiesta SOAP
+     * Il parametro requestPayload viene usato da Spring WS per il routing (@PayloadRoot),
+     * ma l'inoltro alla PU utilizza l'Envelope completo estratto dal MessageContext.
+     *
+     * @param requestPayload l'elemento XML del body (usato per il routing Spring WS)
+     * @param messageContext il contesto del messaggio SOAP con l'Envelope completo
      * @return l'elemento XML della risposta dalla Piattaforma Unitaria
      */
     @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILAutorizzaImportFlussoTesoreria")
     @ResponsePayload
-    public Element handleReconciliationRequest(@RequestPayload Element requestPayload) {
+    public Element handleReconciliationRequest(@RequestPayload Element requestPayload,
+                                               MessageContext messageContext) {
 
         log.info("Ricevuta richiesta SOAP di riconciliazione. LocalName: {}",
                 requestPayload.getLocalName());
 
         try {
-            // Converti il payload XML in stringa per l'inoltro
-            String soapXml = elementToString(requestPayload);
-            log.debug("Payload SOAP ricevuto dal SIL: {}", soapXml);
+            // Estrai l'intero SOAP Envelope dal MessageContext per inoltrarlo alla PU
+            String fullSoapEnvelope = extractFullSoapEnvelope(messageContext);
+            log.debug("SOAP Envelope completo da inoltrare alla PU:\n{}", fullSoapEnvelope);
 
-            // Inoltra alla Piattaforma Unitaria
+            // Inoltra l'Envelope completo alla Piattaforma Unitaria
             String responseXml = piattaformaClient.forwardSoapRequest(
-                    PLATFORM_RECONCILIATION_PATH, soapXml);
+                    PLATFORM_RECONCILIATION_PATH, fullSoapEnvelope);
 
             log.info("Risposta ricevuta dalla Piattaforma Unitaria per la riconciliazione");
+            log.debug("Risposta completa dalla PU:\n{}", responseXml);
 
-            // Converti la risposta in elemento DOM per restituirla come SOAP response
-            return stringToElement(responseXml);
+            // La PU restituisce un SOAP Envelope completo.
+            // Estraiamo il contenuto del Body per restituirlo tramite Spring WS
+            // (che lo re-incapsulera in un nuovo Envelope di risposta).
+            return extractBodyContent(responseXml);
 
         } catch (Exception e) {
             log.error("Errore nella gestione della richiesta di riconciliazione: {}",
@@ -110,6 +136,67 @@ public class ReconciliationEndpoint {
             throw new RuntimeException(
                     "Errore nell'elaborazione della richiesta di riconciliazione", e);
         }
+    }
+
+    /**
+     * Estrae l'intero SOAP Envelope serializzato dal MessageContext.
+     *
+     * Utilizza SoapMessage.writeTo() per ottenere il messaggio SOAP completo
+     * cosi come e stato ricevuto dal SIL (con Header e Body).
+     *
+     * @param messageContext il contesto del messaggio SOAP
+     * @return la stringa XML dell'intero SOAP Envelope
+     * @throws Exception in caso di errore nella serializzazione
+     */
+    private String extractFullSoapEnvelope(MessageContext messageContext) throws Exception {
+        SoapMessage soapMessage = (SoapMessage) messageContext.getRequest();
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        soapMessage.writeTo(outputStream);
+        return outputStream.toString(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Estrae il contenuto del Body da un SOAP Envelope di risposta.
+     *
+     * La PU restituisce un SOAP Envelope completo, ma Spring WS si aspetta
+     * solo il contenuto del Body come valore di ritorno (lo re-incapsulera
+     * automaticamente in un nuovo Envelope di risposta).
+     *
+     * @param soapEnvelope la risposta SOAP Envelope completa dalla PU
+     * @return l'elemento figlio del Body SOAP
+     * @throws Exception in caso di errore nel parsing
+     */
+    private Element extractBodyContent(String soapEnvelope) throws Exception {
+        Document document = secureDocumentBuilderFactory.newDocumentBuilder()
+                .parse(new InputSource(new StringReader(soapEnvelope)));
+
+        Element root = document.getDocumentElement();
+
+        // Cerca l'elemento Body nel SOAP Envelope
+        var bodyNodes = root.getElementsByTagNameNS(
+                "http://schemas.xmlsoap.org/soap/envelope/", "Body");
+
+        if (bodyNodes.getLength() == 0) {
+            // Se non e un Envelope SOAP, potrebbe essere direttamente il contenuto
+            log.warn("La risposta dalla PU non contiene un SOAP Envelope. " +
+                    "Si restituisce il documento root come risposta.");
+            return root;
+        }
+
+        Element bodyElement = (Element) bodyNodes.item(0);
+
+        // Restituisci il primo elemento figlio del Body (il payload di risposta)
+        var children = bodyElement.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element) {
+                return (Element) children.item(i);
+            }
+        }
+
+        // Fallback: se il Body e vuoto o contiene solo testo, restituisci il Body stesso
+        log.warn("Il Body SOAP della risposta PU non contiene elementi figli. " +
+                "Si restituisce il Body stesso.");
+        return bodyElement;
     }
 
     /**

@@ -142,8 +142,13 @@ public class MockPiattaformaUnitariaController {
                 <?xml version="1.0" encoding="UTF-8"?>
                 <soapenv:Envelope
                     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                    xmlns:ente="http://www.regione.lombardia.it/mypay/ente">
-                    <soapenv:Header/>
+                    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
+                    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
+                    <soapenv:Header>
+                        <ppt:intestazionePPT>
+                            <codIpaEnte>%s</codIpaEnte>
+                        </ppt:intestazionePPT>
+                    </soapenv:Header>
                     <soapenv:Body>
                         <ente:pivotSILAutorizzaImportFlussoTesoreria_RPT_risposta>
                             <codIpaEnte>%s</codIpaEnte>
@@ -154,7 +159,7 @@ public class MockPiattaformaUnitariaController {
                         </ente:pivotSILAutorizzaImportFlussoTesoreria_RPT_risposta>
                     </soapenv:Body>
                 </soapenv:Envelope>
-                """.formatted(codIpaEnte, tipoFlusso, UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+                """.formatted(codIpaEnte, codIpaEnte, tipoFlusso, UUID.randomUUID().toString().substring(0, 8).toUpperCase());
     }
 
     private String extractTagValue(String xml, String tagName, String defaultValue) {
