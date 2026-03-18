@@ -48,7 +48,7 @@ public class SoapFaultExceptionResolver implements EndpointExceptionResolver {
                         Locale.ITALIAN
                 );
                 fault.addFaultDetail().addFaultDetailElement(
-                        new javax.xml.namespace.QName("http://www.regione.lombardia.it/mypay/fault", "errorCode")
+                        new javax.xml.namespace.QName("http://www.regione.veneto.it/pagamenti/pivot/ente/fault", "errorCode")
                 ).addText("AUTH_ERROR");
 
             } else if (ex instanceof PiattaformaCommunicationException commEx) {
@@ -60,7 +60,7 @@ public class SoapFaultExceptionResolver implements EndpointExceptionResolver {
                         Locale.ITALIAN
                 );
                 fault.addFaultDetail().addFaultDetailElement(
-                        new javax.xml.namespace.QName("http://www.regione.lombardia.it/mypay/fault", "errorCode")
+                        new javax.xml.namespace.QName("http://www.regione.veneto.it/pagamenti/pivot/ente/fault", "errorCode")
                 ).addText("COMM_ERROR");
 
             } else {
@@ -69,7 +69,7 @@ public class SoapFaultExceptionResolver implements EndpointExceptionResolver {
                         Locale.ITALIAN
                 );
                 fault.addFaultDetail().addFaultDetailElement(
-                        new javax.xml.namespace.QName("http://www.regione.lombardia.it/mypay/fault", "errorCode")
+                        new javax.xml.namespace.QName("http://www.regione.veneto.it/pagamenti/pivot/ente/fault", "errorCode")
                 ).addText("INTERNAL_ERROR");
             }
 

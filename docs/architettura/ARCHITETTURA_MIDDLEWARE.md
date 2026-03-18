@@ -1,8 +1,8 @@
 # Documento di Architettura - MyPay Middleware (mypay.mypaycore)
 
-**Versione:** 1.0  
-**Data:** 17 Marzo 2026  
-**Stato:** Fase 1 - Fondamenta completate  
+**Versione:** 1.1  
+**Data:** 18 Marzo 2026  
+**Stato:** Fase 1 - Fondamenta completate + Test end-to-end con PU UAT reale  
 
 ---
 
@@ -53,7 +53,8 @@ I sistemi con cui il middleware interagisce direttamente sono:
 - Sistemi applicativi degli enti sanitari e regionali
 - Inviano richieste SOAP al middleware
 - Ricevono le risposte elaborate dal middleware
-- Si autenticano tramite Bearer token
+- Si autenticano tramite `codIpaEnte` (nell'Header SOAP) + `password` (nel Body SOAP)
+- NON inviano JWT/Bearer token — l'autenticazione OAuth2 è gestita internamente dal middleware
 
 **Middleware (questo progetto)**
 - Punto di accesso unico per i SIL
@@ -75,7 +76,7 @@ I sistemi con cui il middleware interagisce direttamente sono:
 ```
 SIL
  │
- │  SOAP Request + Authorization: Bearer <token_sil>
+ │  SOAP Request (Envelope completo con Header + Body)
  │  Content-Type: text/xml
  ▼
 ┌─────────────────────────────────────────────────────┐
@@ -105,15 +106,15 @@ SIL
 
 ### 3.2 Flusso Dettagliato di una Richiesta
 
-1. Il **SIL** invia una richiesta SOAP al middleware con header `Authorization: Bearer <token>`
-2. Il middleware valida il token del SIL tramite SpringLine2 Security
-3. L'endpoint SOAP (`ReconciliationEndpoint`) riceve il payload XML
+1. Il **SIL** invia una richiesta SOAP al middleware (con `codIpaEnte` nell'Header e `password` nel Body)
+2. Il middleware riceve la richiesta tramite Spring WS ed estrae l'Envelope SOAP completo
+3. L'endpoint SOAP (`ReconciliationEndpoint`) usa il `MessageContext` per ottenere Header + Body
 4. Il `PiattaformaUnitariaClient` prepara la richiesta verso la piattaforma
 5. L'`OAuthTokenInterceptor` aggiunge automaticamente il token OAuth2 Bearer
 6. Se il token non esiste o e scaduto, l'`OAuthTokenService` ne richiede uno nuovo
-7. La richiesta autenticata viene inviata alla Piattaforma Unitaria
-8. Se la piattaforma risponde 401, il client effettua un retry con un token nuovo
-9. La risposta SOAP viene restituita al SIL
+7. L'Envelope SOAP completo viene inviato alla Piattaforma Unitaria con il Bearer token
+8. Se la piattaforma risponde 401, il client effettua un refresh del token e un retry automatico della richiesta
+9. Il body viene estratto dalla risposta PU e restituito al SIL in un nuovo Envelope SOAP
 
 ### 3.3 Flusso di Autenticazione OAuth2
 
@@ -121,13 +122,12 @@ SIL
 OAuthTokenService                    Piattaforma Unitaria
      │                                       │
      │  POST /pu/auth/oauth/token            │
-     │  Content-Type: x-www-form-urlencoded  │
-     │  ┌─────────────────────────────┐      │
-     │  │ client_id=SELC_...          │      │
-     │  │ client_secret=xxxxx         │──────>│
-     │  │ grant_type=client_credentials│     │
-     │  │ scope=openid                │      │
-     │  └─────────────────────────────┘      │
+     │  ?client_id=SELC_...                  │
+     │  &client_secret=xxxxx                 │
+     │  &grant_type=client_credentials       │
+     │  &scope=openid                        │
+     │  (parametri come query string)        │
+     │  ──────────────────────────────────>  │
      │                                       │
      │  <────────────────────────────────────│
      │  {                                    │
@@ -293,11 +293,11 @@ Implementazione di `ClientHttpRequestInterceptor` che intercetta ogni richiesta 
 Endpoint Spring WS annotato con `@Endpoint` che utilizza l'approccio **contract-last**:
 
 - `@PayloadRoot(namespace, localPart)` per il routing delle richieste SOAP
-- Namespace: `http://www.regione.lombardia.it/mypay/ente`
+- Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
 - Operazione: `pivotSILAutorizzaImportFlussoTesoreria`
-- Riceve il payload XML come `Element` DOM
-- Converte in stringa e inoltra al `PiattaformaUnitariaClient`
-- Converte la risposta da stringa a `Element` DOM per la restituzione SOAP
+- Approccio **proxy trasparente**: inietta il `MessageContext` per accedere all'Envelope SOAP completo (Header + Body)
+- Estrae l'Envelope completo tramite `SoapMessage.writeTo()` e lo inoltra integralmente al `PiattaformaUnitariaClient`
+- Dalla risposta della PU, estrae il contenuto del Body SOAP e lo restituisce come `Element` DOM per il re-wrapping da parte di Spring WS
 
 ### 6.4 Modulo Client Piattaforma
 
@@ -318,12 +318,22 @@ Eccezione runtime dedicata ai fallimenti di autenticazione OAuth2, con supporto 
 
 ### 6.6 Sicurezza
 
-La catena di sicurezza SpringLine2 e configurata per:
+La catena di sicurezza SpringLine2 e configurata nel `application.yml` base con JWT abilitato sugli endpoint SOAP. Tuttavia, nel profilo **dev** (`application-dev.yml`), la sicurezza JWT e **disabilitata** perche i SIL non inviano token JWT — si autenticano tramite `codIpaEnte` + `password` nel messaggio SOAP:
+
+**Configurazione base (application.yml):**
 
 | Path Pattern | Tipo di Autenticazione | Descrizione |
 |-------------|----------------------|-------------|
 | `/favicon.ico`, `/swagger-ui/**`, `/v3/api-docs/**` | Anonymous | Accesso pubblico |
-| `/pu/sil/soap/**` | JWT + Propagator | Richiede Bearer token valido dai SIL |
+| `/pu/sil/soap/**` | JWT + Propagator | Configurazione predefinita (per ambienti con gateway) |
+
+**Configurazione dev (application-dev.yml) — override:**
+
+| Path Pattern | Tipo di Autenticazione | Descrizione |
+|-------------|----------------------|-------------|
+| `/**` | Anonymous | JWT disabilitato, accesso libero per test diretti |
+
+> **Nota:** In ambiente di produzione, la sicurezza JWT potrebbe essere gestita da un API Gateway a monte del middleware. Il profilo dev disabilita questa protezione per permettere test end-to-end diretti dai SIL o da Postman.
 
 ### 6.7 Logging
 

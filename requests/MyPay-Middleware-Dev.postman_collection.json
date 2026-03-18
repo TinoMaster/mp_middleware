@@ -1,0 +1,291 @@
+{
+  "info": {
+    "_postman_id": "mypay-middleware-dev",
+    "name": "MyPay Middleware — Test DEV (profilo dev, PU UAT reale)",
+    "description": "Collection per testare il flusso end-to-end SIL → Middleware → Piattaforma Unitaria (ambiente UAT reale).\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata con il client-secret OAuth2\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo su localhost:5432/mypay_local_copy (user: admin, password: admin)\n\nFlusso reale:\n1. SIL invia richiesta SOAP al middleware\n2. Middleware ottiene token OAuth2 dalla PU (endpoint reale UAT)\n3. Middleware inoltra l'Envelope SOAP completo alla PU con il Bearer token\n4. PU elabora la richiesta e restituisce la risposta\n5. Middleware estrae il body dalla risposta PU e lo restituisce al SIL\n\nNOTA: Il SIL NON invia JWT. L'autenticazione SIL avviene tramite codIpaEnte + password nel body SOAP. Il middleware gestisce internamente l'autenticazione OAuth2 verso la PU.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Diagnostica",
+      "item": [
+        {
+          "name": "1.1 Health Check Completo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Verifica lo stato completo del middleware.\n\nControlla:\n- db: PostgreSQL raggiungibile\n- piattaformaUnitaria: PU UAT raggiungibile\n- OAuthToken: stato del token in cache\n- diskSpace, ping, ecc.\n\nRisposta attesa: JSON con i dettagli di tutti gli health indicator.\nNOTA: Al primo avvio, OAuthToken sarà DOWN ('Token assente o scaduto'). Diventerà UP dopo la prima richiesta SOAP."
+          }
+        },
+        {
+          "name": "1.2 Health Check — Solo Token OAuth2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/OAuthToken",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health", "OAuthToken"]
+            },
+            "description": "Verifica lo stato specifico del token OAuth2 in cache.\n\nStati possibili:\n- UP: 'Token OAuth2 in cache valido' (token presente e non scaduto)\n- DOWN: 'Token OAuth2 assente o scaduto' (verrà rinnovato al prossimo utilizzo)\n\nIl token viene acquisito automaticamente alla prima richiesta SOAP e resta in cache per ~4 ore."
+          }
+        },
+        {
+          "name": "1.3 Health Check — Solo Piattaforma Unitaria",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/piattaformaUnitaria",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health", "piattaformaUnitaria"]
+            },
+            "description": "Verifica la raggiungibilità della Piattaforma Unitaria (ambiente UAT).\n\nRisposta attesa: UP con URL https://api.uat.p4pa.pagopa.it e stato 'Piattaforma Unitaria raggiungibile'.\nSe DOWN: verificare la connettività di rete verso api.uat.p4pa.pagopa.it."
+          }
+        },
+        {
+          "name": "1.4 Health Check — Solo Database",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/db",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health", "db"]
+            },
+            "description": "Verifica la connessione al database PostgreSQL locale.\n\nRisposta attesa: UP con database=PostgreSQL.\nSe DOWN: verificare che PostgreSQL sia attivo su localhost:5432/mypay_local_copy."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Flusso Principale SIL → Middleware → PU",
+      "item": [
+        {
+          "name": "2.1 [PRINCIPALE] pivotSILAutorizzaImportFlussoTesoreria — Tipo O (OPI)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Verifica che la risposta sia 200 OK",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Verifica che la risposta sia XML",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "// Verifica che la risposta contenga il body SOAP atteso",
+                  "pm.test('Response contains pivotSILAutorizzaImportFlussoTesoreriaRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoTesoreriaRisposta');",
+                  "});",
+                  "",
+                  "// Verifica che i namespace siano corretti (Veneto)",
+                  "pm.test('Response uses correct Veneto namespace', function () {",
+                  "    pm.expect(pm.response.text()).to.include('regione.veneto.it/pagamenti/pivot/ente/');",
+                  "});",
+                  "",
+                  "// Verifica presenza dei campi principali nella risposta",
+                  "pm.test('Response contains uploadUrl', function () {",
+                  "    pm.expect(pm.response.text()).to.include('uploadUrl');",
+                  "});",
+                  "",
+                  "pm.test('Response contains requestToken', function () {",
+                  "    pm.expect(pm.response.text()).to.include('requestToken');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "pivotSILAutorizzaImportFlussoTesoreria"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "CHIAMATA PRINCIPALE — Simula un SIL che richiede l'autorizzazione per importare un flusso di tesoreria OPI.\n\nFlusso interno automatico:\n1. Middleware riceve la richiesta SOAP (ReconciliationEndpoint)\n2. Middleware estrae l'Envelope SOAP completo (Header + Body)\n3. OAuthTokenService ottiene/riutilizza il token OAuth2 dalla PU reale\n4. PiattaformaUnitariaClient inoltra l'Envelope completo alla PU UAT con Bearer token\n5. PU elabora la richiesta e restituisce la risposta SOAP\n6. Middleware estrae il body dalla risposta PU e lo restituisce al SIL\n\nParametri della richiesta:\n- codIpaEnte: SELC_99999000013 (ente di test in UAT)\n- password: BERGAMO\n- tipoFlusso: O (flusso OPI - Ordinativi di Pagamento e Incasso)\n\nRisposta attesa dalla PU:\n- pivotSILAutorizzaImportFlussoTesoreriaRisposta con:\n  - uploadUrl: URL per il caricamento del file\n  - authorizationToken: token per l'upload\n  - requestToken: identificativo della richiesta\n  - importPath: percorso di importazione"
+          }
+        },
+        {
+          "name": "2.2 [PRINCIPALE] pivotSILAutorizzaImportFlussoTesoreria — Tipo F (Finanziario)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Verifica che la risposta sia 200 OK",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Verifica che la risposta sia XML",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "// Verifica che la risposta contenga il body SOAP atteso",
+                  "pm.test('Response contains pivotSILAutorizzaImportFlussoTesoreriaRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoTesoreriaRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "pivotSILAutorizzaImportFlussoTesoreria"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>F</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Variante con tipoFlusso=F (flusso finanziario).\n\nStesso flusso della richiesta 2.1, ma con tipoFlusso diverso.\nVerifica che la PU gestisca correttamente anche i flussi finanziari."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Test Diretti PU (senza middleware)",
+      "description": "Richieste dirette alla Piattaforma Unitaria UAT, bypassando il middleware.\nRichiedono un Bearer token valido nell'header Authorization.\n\nUtili per:\n- Verificare che la PU sia raggiungibile\n- Confrontare la risposta diretta con quella mediata dal middleware\n- Debug in caso di errori",
+      "item": [
+        {
+          "name": "3.1 [Prerequisito] Ottieni Token OAuth2 dalla PU",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Verifica risposta 200",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Salva il token per le richieste successive",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Response contains access_token', function () {",
+                  "    pm.expect(jsonData).to.have.property('access_token');",
+                  "});",
+                  "",
+                  "if (jsonData.access_token) {",
+                  "    pm.collectionVariables.set('puBearerToken', jsonData.access_token);",
+                  "    console.log('Token salvato nella variabile puBearerToken');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": []
+            },
+            "url": {
+              "raw": "https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token?client_id=SELC_99999000013SIL_RegLomb2&client_secret={{puClientSecret}}&grant_type=client_credentials&scope=openid",
+              "protocol": "https",
+              "host": ["api", "uat", "p4pa", "pagopa", "it"],
+              "path": ["pu", "auth", "oauth", "token"],
+              "query": [
+                {"key": "client_id", "value": "SELC_99999000013SIL_RegLomb2"},
+                {"key": "client_secret", "value": "{{puClientSecret}}"},
+                {"key": "grant_type", "value": "client_credentials"},
+                {"key": "scope", "value": "openid"}
+              ]
+            },
+            "description": "Ottiene un token OAuth2 direttamente dalla PU UAT.\n\nIMPORTANTE: I parametri vanno come query string, NON come form body!\nLa PU restituisce 404 se i parametri vengono inviati come application/x-www-form-urlencoded body.\n\nIl token viene salvato automaticamente nella variabile 'puBearerToken' per le richieste successive.\n\nPer eseguire questa richiesta, impostare la variabile di collection 'puClientSecret' con il client-secret OAuth2.\n\nNOTA: Il middleware gestisce tutto questo internamente. Questa richiesta è solo per debug/confronto."
+          }
+        },
+        {
+          "name": "3.2 [Diretta PU] pivotSILAutorizzaImportFlussoTesoreria",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{puBearerToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "https://api.uat.p4pa.pagopa.it/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati",
+              "protocol": "https",
+              "host": ["api", "uat", "p4pa", "pagopa", "it"],
+              "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Richiesta SOAP diretta alla PU UAT (bypassando il middleware).\n\nPre-requisito: Eseguire prima la richiesta 3.1 per ottenere il Bearer token.\n\nUtile per confrontare la risposta diretta della PU con quella mediata dal middleware e verificare che il proxy trasparente funzioni correttamente."
+          }
+        }
+      ]
+    }
+  ]
+}

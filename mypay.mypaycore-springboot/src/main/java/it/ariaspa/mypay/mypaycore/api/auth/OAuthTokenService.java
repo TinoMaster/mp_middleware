@@ -7,12 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -149,7 +146,7 @@ public class OAuthTokenService {
 
     /**
      * Effettua la richiesta HTTP POST all'endpoint OAuth2 per ottenere un nuovo token.
-     * I parametri vengono inviati come application/x-www-form-urlencoded.
+     * I parametri vengono inviati come query string nell'URL (richiesto dalla Piattaforma Unitaria).
      *
      * @return token di accesso ottenuto
      * @throws PiattaformaAuthenticationException in caso di errore nella richiesta
@@ -157,22 +154,21 @@ public class OAuthTokenService {
     private String requestNewToken() {
         PiattaformaUnitariaConfig.Auth authConfig = config.getAuth();
 
+        // La Piattaforma Unitaria richiede i parametri come query string nell'URL
+        String tokenUrlWithParams = authConfig.getTokenUrl()
+                + "?client_id=" + authConfig.getClientId()
+                + "&client_secret=" + authConfig.getClientSecret()
+                + "&grant_type=" + authConfig.getGrantType()
+                + "&scope=" + authConfig.getScope();
+
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("client_id", authConfig.getClientId());
-        params.add("client_secret", authConfig.getClientSecret());
-        params.add("grant_type", authConfig.getGrantType());
-        params.add("scope", authConfig.getScope());
-
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
+        HttpEntity<String> request = new HttpEntity<>(headers);
 
         try {
             log.debug("Invio richiesta token OAuth2 a: {}", authConfig.getTokenUrl());
 
             ResponseEntity<OAuthTokenResponse> response = restTemplate.postForEntity(
-                    authConfig.getTokenUrl(),
+                    tokenUrlWithParams,
                     request,
                     OAuthTokenResponse.class
             );
