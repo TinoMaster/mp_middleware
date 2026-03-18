@@ -19,14 +19,15 @@
 8. [Modulo Endpoint SOAP](#8-modulo-endpoint-soap)
 9. [Gestione degli Errori](#9-gestione-degli-errori)
 10. [Monitoraggio e Health Check](#10-monitoraggio-e-health-check)
-11. [Resilienza](#11-resilienza)
-12. [Mock della Piattaforma Unitaria](#12-mock-della-piattaforma-unitaria)
-13. [Ambienti e Profili](#13-ambienti-e-profili)
-14. [Test Unitari](#14-test-unitari)
-15. [Come avviare il progetto](#15-come-avviare-il-progetto)
-16. [Come testare il flusso completo](#16-come-testare-il-flusso-completo)
-17. [Cosa NON è ancora implementato](#17-cosa-non-è-ancora-implementato)
-18. [Prossimi passi — Fasi Future](#18-prossimi-passi--fasi-future)
+11. [Sistema di Logging](#11-sistema-di-logging)
+12. [Resilienza](#12-resilienza)
+13. [Mock della Piattaforma Unitaria](#13-mock-della-piattaforma-unitaria)
+14. [Ambienti e Profili](#14-ambienti-e-profili)
+15. [Test Unitari](#15-test-unitari)
+16. [Come avviare il progetto](#16-come-avviare-il-progetto)
+17. [Come testare il flusso completo](#17-come-testare-il-flusso-completo)
+18. [Cosa NON è ancora implementato](#18-cosa-non-è-ancora-implementato)
+19. [Prossimi passi — Fasi Future](#19-prossimi-passi--fasi-future)
 
 ---
 
@@ -569,7 +570,146 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
 ---
 
-## 11. Resilienza
+## 11. Sistema di Logging
+
+Il middleware utilizza il sistema di logging fornito dal framework **SpringLine2**, basato su **Logback**. La configurazione produce 4 flussi di log distinti nella cartella `logs/`.
+
+### Struttura dei file di log
+
+La cartella `logs/` (relativa alla working directory dell'applicazione) viene creata automaticamente all'avvio. Contiene i seguenti file:
+
+| File | Scopo | Formato | Rolling |
+|------|-------|---------|---------|
+| `application.log` | Log standard Spring Boot — avvio, errori, eventi applicativi | Timestamp ISO + livello + logger + messaggio | Giornaliero, `.gz` |
+| `APP.log` | Trace HTTP SpringLine2 — corpo completo di request/response | Pipe-delimited (`\|dataOra=\|elapsed=\|DIR=...`) | Giornaliero, `.gz` |
+| `MON.log` | Monitoring — metadati di ogni chiamata HTTP (senza body) | Pipe-delimited | Giornaliero, `.gz` |
+| `AUDIT.log` | Audit di sicurezza — eventi strutturati (avvio, shutdown, autenticazioni) | JSON, un oggetto per riga | Giornaliero, `.gz` |
+
+**Esempio di contenuto MON.log:**
+```
+|17/03/2026-10:30:45|app=mypaycore|met=POST /pu/sil/soap/...|ID_DC=abc123,def456|elapsed=250|RV=SRV|DIR=IN|esito=OK
+```
+
+**Esempio di contenuto AUDIT.log:**
+```json
+{"priority":2,"timestamp":"2026-03-17T10:30:00.000+02:00","epochTime":1710665400000,"id":"app_startup","eventType":"app_startup","eventLevel":"INFO","status":"success","system_name":"mypay.mypaycore"}
+```
+
+### Come viene attivato
+
+La configurazione del logging è gestita da SpringLine2 attraverso i seguenti meccanismi:
+
+1. **`bootstrap.yml`** (in `mypay.mypaycore-springboot` e `mypay.mypaycore-properties`):
+   ```yaml
+   logging:
+     file:
+       path: logs
+   ```
+
+2. **`boostrap.default.properties`** (modulo `mypay.mypaycore-local-properties`):
+   ```properties
+   logging.config=classpath:logback-springline2.xml
+   logging.file.path=logs
+   logging.level.root=INFO
+   ```
+
+3. **Attivazione MON/APP in `application.yml`**:
+   ```yaml
+   spl:
+     http:
+       logging:
+         mon.enabled: true    # Attiva MON.log per richieste HTTP in ingresso
+         app.enabled: true    # Attiva APP.log per body HTTP in ingresso
+     client-rest:
+       logging:
+         mon.enabled: true    # Attiva MON.log per chiamate REST in uscita
+         app.enabled: true    # Attiva APP.log per body delle risposte REST
+   ```
+
+Le proprietà `spl.*` attivano i filtri servlet di SpringLine2 che intercettano automaticamente tutte le richieste HTTP in ingresso e le risposte REST in uscita.
+
+### Livelli di log per profilo
+
+| Logger | `local` | `dev` | `uat` | `prod` |
+|--------|---------|-------|-------|--------|
+| `it.ariaspa.mypay` (codice applicativo) | DEBUG | DEBUG | INFO | INFO |
+| `org.springframework.ws` (SOAP) | DEBUG | DEBUG | WARN | ERROR |
+| `org.springframework.web.client` (RestTemplate) | DEBUG | — | — | — |
+| Root logger | INFO | INFO | INFO | WARN |
+
+### Struttura Logback di riferimento
+
+Il framework SpringLine2 fornisce un file `logback-springline2.xml` all'interno del JAR `springline2-core`. I sibling projects (come `mall-gpd` e `mypay-be`) includono una versione locale `logback-spring.xml` che definisce la stessa struttura:
+
+```xml
+<configuration>
+  <springProperty scope="context" name="LOG_DIR" source="logging.file.dir"/>
+
+  <!-- FILE: main application log -->
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_DIR}/application.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/application.%d{yyyy-MM-dd}.gz</fileNamePattern>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%d{yyyy-MM-ddTHH:mm:ss.SSSXXX} %-5level PID --- [%thread] %logger : %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- MON: monitoring log -->
+  <appender name="MON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_DIR}/mon.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/mon.%d{yyyy-MM-dd}.gz</fileNamePattern>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%d{dd/MM/yyyy-HH:mm:ss}|%m%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- AUDIT: audit log JSON -->
+  <appender name="AUDIT" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_DIR}/audit.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/audit.%d{yyyy-MM-dd}.gz</fileNamePattern>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Named loggers -->
+  <logger name="MON" level="DEBUG">
+    <appender-ref ref="MON"/>
+  </logger>
+  <logger name="AUDIT" level="ALL">
+    <appender-ref ref="AUDIT"/>
+  </logger>
+
+  <root level="INFO">
+    <appender-ref ref="FILE"/>
+  </root>
+</configuration>
+```
+
+### Tracciamento delle transazioni
+
+SpringLine2 inietta automaticamente nei log informazioni di tracciamento:
+
+- **Transaction ID** (`ID_DC`): formato `traceId,spanId` — identificativo univoco per ogni transazione HTTP
+- **Metadati automatici**: `dataOra`, `elapsed` (tempo di elaborazione in ms), `DIR` (SRV=server, CLI=client), `esito`, `server`, `app`, `met` (metodo + path)
+
+Questi valori sono automaticamente popolati dai filtri servlet di SpringLine2 per ogni richiesta HTTP.
+
+### Note per la produzione
+
+- **Ritenzione**: La configurazione attuale non include parametri `maxHistory` o `totalSizeCap`, quindi i file compressi si accumulano indefinitamente. È consigliabile aggiungere una policy di pulizia.
+- **Percorso**: Il percorso `logs` è relativo. In produzione è consigliabile usare un percorso assoluto (es. `/var/log/mypay.mypaycore`).
+- **Sicurezza**: I log non devono contenere dati sensibili (password, token, dati personali). SpringLine2 esclude automaticamente i campi `accessToken` dall'OAuthTokenResponse grazie a `@ToString(exclude = "accessToken")`.
+
+---
+
+## 12. Resilienza
 
 Il middleware implementa la resilienza tramite la libreria **Resilience4j** (versione Spring Boot 3), applicata al metodo `PiattaformaUnitariaClient.forwardSoapRequest()`.
 
@@ -684,7 +824,7 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ---
 
-## 12. Mock della Piattaforma Unitaria
+## 13. Mock della Piattaforma Unitaria
 
 ### `MockPiattaformaUnitariaController.java`
 
@@ -730,7 +870,7 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ---
 
-## 13. Ambienti e Profili
+## 14. Ambienti e Profili
 
 Il progetto supporta cinque profili Spring, ognuno con una configurazione specifica.
 
@@ -823,7 +963,7 @@ Il progetto supporta cinque profili Spring, ognuno con una configurazione specif
 
 ---
 
-## 14. Test Unitari
+## 15. Test Unitari
 
 Il progetto ha **19 test unitari** suddivisi in 3 classi, tutti con risultato BUILD SUCCESS.
 
@@ -875,7 +1015,7 @@ Il costruttore Spring è marcato con `@Autowired` per disambiguare (necessario p
 
 ---
 
-## 15. Come avviare il progetto
+## 16. Come avviare il progetto
 
 ### Pre-requisiti
 
@@ -921,7 +1061,7 @@ Il POM padre corporativo (`it.ariaspa:cm:1.0.0`) ha un plugin enforcer che verif
 
 ---
 
-## 16. Come testare il flusso completo
+## 17. Come testare il flusso completo
 
 Con l'applicazione avviata in profilo `local` su `http://localhost:8080`:
 
@@ -991,7 +1131,7 @@ Postman → ReconciliationEndpoint (Spring WS)
 
 ---
 
-## 17. Cosa NON è ancora implementato
+## 18. Cosa NON è ancora implementato
 
 Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora.
 
@@ -1010,7 +1150,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 ---
 
-## 18. Prossimi passi — Fasi Future
+## 19. Prossimi passi — Fasi Future
 
 ### Fase 2 — Persistenza Database (plumbing completato ✅)
 
