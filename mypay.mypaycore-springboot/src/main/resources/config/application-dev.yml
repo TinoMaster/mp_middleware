@@ -23,9 +23,9 @@ spring:
   datasource:
     pa:
       driver-class-name: org.postgresql.Driver
-      url: ${DB_PA_URL:jdbc:postgresql://localhost:5432/mypay_local_copy}
-      username: ${DB_PA_USERNAME:admin}
-      password: ${DB_PA_PASSWORD:admin}
+      url: ${DB_PA_URL:jdbc:postgresql://10.199.144.62:5432/mypay4.pa}
+      username: ${DB_PA_USERNAME:mypay4.pa}
+      password: ${DB_PA_PASSWORD:mypay4.pa}
       hikari:
         minimum-idle: 1
         maximum-pool-size: 5
