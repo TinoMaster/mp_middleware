@@ -27,33 +27,33 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Endpoint SOAP per la riconciliazione dei pagamenti telematici.
- *
+ * <p>
  * Questo endpoint riceve le richieste SOAP dai sistemi SIL (Sistemi Informativi Locali)
  * e le inoltra alla Piattaforma Unitaria tramite il PiattaformaUnitariaClient.
- *
+ * <p>
  * Flusso:
  * 1. Il SIL invia una richiesta SOAP a questo endpoint
  * 2. L'endpoint cattura l'intero SOAP Envelope (Header + Body) dal MessageContext
  * 3. L'Envelope completo viene inoltrato alla Piattaforma Unitaria (autenticata tramite OAuth2)
  * 4. La risposta della piattaforma viene restituita al SIL
- *
+ * <p>
  * IMPORTANTE: Il SIL invia nell'Header SOAP il codIpaEnte (namespace ppthead) che
  * identifica l'ente. La PU richiede l'Envelope completo con Header e Body.
  * Per questo motivo, l'endpoint utilizza il MessageContext per estrarre l'intero
  * messaggio SOAP e inoltrarlo alla PU cosi com'e (approccio transparent proxy).
- *
+ * <p>
  * Endpoint URI: /pu/sil/soap/reconciliation
  * Esempio di richiesta: pivotSILAutorizzaImportFlussoTesoreria
- *
+ * <p>
  * Namespace PU:
  * - Header: http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead
  * - Body:   http://www.regione.veneto.it/pagamenti/pivot/ente/
- *
+ * <p>
  * Sicurezza XML:
  * - Prevenzione XXE (XML External Entity) attacks
  * - Disabilitazione DTD e entity esterne nel parser XML
  * - TransformerFactory sicura senza accesso a DTD/stylesheet esterni
- *
+ * <p>
  * Fase 1: Approccio contract-last semplificato con transparent proxy.
  */
 @Endpoint
@@ -78,10 +78,14 @@ public class ReconciliationEndpoint {
     static final String PLATFORM_RECONCILIATION_PATH =
             "/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati";
 
-    /** DocumentBuilderFactory sicura (thread-safe dopo configurazione). */
+    /**
+     * DocumentBuilderFactory sicura (thread-safe dopo configurazione).
+     */
     private final DocumentBuilderFactory secureDocumentBuilderFactory;
 
-    /** TransformerFactory sicura (thread-safe dopo configurazione). */
+    /**
+     * TransformerFactory sicura (thread-safe dopo configurazione).
+     */
     private final TransformerFactory secureTransformerFactory;
 
     private final PiattaformaUnitariaClient piattaformaClient;
@@ -94,10 +98,10 @@ public class ReconciliationEndpoint {
 
     /**
      * Gestisce la richiesta SOAP pivotSILAutorizzaImportFlussoTesoreria.
-     *
+     * <p>
      * Cattura l'intero SOAP Envelope dal MessageContext (incluso l'Header con codIpaEnte),
      * lo inoltra alla Piattaforma Unitaria e restituisce la risposta come elemento DOM.
-     *
+     * <p>
      * Il parametro requestPayload viene usato da Spring WS per il routing (@PayloadRoot),
      * ma l'inoltro alla PU utilizza l'Envelope completo estratto dal MessageContext.
      *
@@ -140,7 +144,7 @@ public class ReconciliationEndpoint {
 
     /**
      * Estrae l'intero SOAP Envelope serializzato dal MessageContext.
-     *
+     * <p>
      * Utilizza SoapMessage.writeTo() per ottenere il messaggio SOAP completo
      * cosi come e stato ricevuto dal SIL (con Header e Body).
      *
@@ -157,7 +161,7 @@ public class ReconciliationEndpoint {
 
     /**
      * Estrae il contenuto del Body da un SOAP Envelope di risposta.
-     *
+     * <p>
      * La PU restituisce un SOAP Envelope completo, ma Spring WS si aspetta
      * solo il contenuto del Body come valore di ritorno (lo re-incapsulera
      * automaticamente in un nuovo Envelope di risposta).
@@ -228,7 +232,7 @@ public class ReconciliationEndpoint {
 
     /**
      * Crea una DocumentBuilderFactory sicura con protezione XXE.
-     *
+     * <p>
      * Previene:
      * - XML External Entity (XXE) injection
      * - Server-Side Request Forgery (SSRF) via entity esterne
