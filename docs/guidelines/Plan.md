@@ -13,6 +13,7 @@ Il progetto è stato generato dall'archetype **SpringLine2** (ARIA S.p.A.) con c
 | Fase 1 | ✅ Completata | Fondazioni: pulizia demo, struttura middleware, OAuth2, endpoint SOAP |
 | Fase 5 | ✅ Completata | Resilienza, gestione errori, health check, profili multi-ambiente, test unitari |
 | Fase 2 | ✅ Completata (plumbing) | Persistenza su database PostgreSQL — DataSource, HikariCP, JPA configurati; tabelle ancora da definire |
+| Semplificazione Configurazione | ✅ Completata | Eliminazione profili uat/prod, conversione configurazione da YAML a Properties, solo profilo `dev` attivo |
 | Fase 3 | ⬜ Da fare | Logica di business (riconciliazione, flussi tesoreria) |
 | Fase 4 | ⬜ Da fare | Endpoint SOAP aggiuntivi, contract-first con WSDL/XSD |
 | Fase 6 | ⬜ Da fare | Messaggistica asincrona (JMS/ActiveMQ) |
@@ -134,11 +135,13 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
 
 ### 5.4 Profili Multi-Ambiente ✅
 
-| Profilo | Logging | Resilienza | Credenziali | Actuator Health Details |
-|---------|---------|-----------|-------------|------------------------|
-| `dev` | DEBUG | Rilassata (soglia 80%, attesa 10s) | Placeholder in YAML | `always` |
-| `uat` | INFO | Standard | Mix YAML/env vars | `when-authorized` |
-| `prod` | WARN | Conservativa (soglia 40%, attesa 60s) | Solo env vars | `never` |
+> **Nota**: I profili `uat` e `prod` sono stati successivamente rimossi nella fase di "Semplificazione Configurazione". Attualmente è attivo solo il profilo `dev`.
+
+| Profilo | Logging | Resilienza | Credenziali | Actuator Health Details | Stato |
+|---------|---------|-----------|-------------|------------------------|-------|
+| `dev` | DEBUG | Rilassata (soglia 80%, attesa 10s) | Da variabili d'ambiente o `.env` | `always` | **Attivo** |
+| `uat` | INFO | Standard | Mix Properties/env vars | `when-authorized` | Rimosso (da ricreare) |
+| `prod` | WARN | Conservativa (soglia 40%, attesa 60s) | Solo env vars | `never` | Rimosso (da ricreare) |
 
 ### 5.5 Test Unitari ✅
 
@@ -151,7 +154,7 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
 | `ReconciliationEndpointTest` | 3 | Inoltro successo, gestione errori, preservazione namespace |
 | **Totale** | **19** | **BUILD SUCCESS, 0 fallimenti** |
 
-**Configurazione test**: `src/test/resources/config/application.yml` con cloud config disabilitato, autenticazione anonima, resilienza rilassata.
+**Configurazione test**: `src/test/resources/config/application.properties` con cloud config disabilitato, autenticazione anonima, resilienza rilassata.
 
 **Nota sulla testabilità**: `OAuthTokenService` e `PiattaformaUnitariaClient` hanno costruttori package-private che accettano `RestTemplate` per iniezione di mock nei test.
 
@@ -164,10 +167,9 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
 ### Attività completate ✅
 
 1. Aggiunto `spring-boot-starter-data-jpa` e driver `postgresql` in `pom.xml` (rimossi i placeholder commentati Oracle/HikariCP)
-2. Rimossa l'esclusione `DataSourceAutoConfiguration` da `application.yml`; aggiunte proprietà JPA base (`ddl-auto: none`, `show-sql: false`, `open-in-view: false`)
+2. Rimossa l'esclusione `DataSourceAutoConfiguration`; aggiunte proprietà JPA base (`ddl-auto=none`, `show-sql=false`, `open-in-view=false`)
 3. Creato `DataSourceConfig.java` — configurazione manuale HikariCP + `LocalContainerEntityManagerFactoryBean` + `JpaTransactionManager` (`@Primary`), legge `spring.datasource.pa.*`
-4. Aggiunto blocco `spring.datasource.pa.*` con credenziali reali PostgreSQL in `application-local.yml`
-5. Aggiunti placeholder `spring.datasource.pa.*` in `application-dev.yml`, `application-uat.yml`, `application-prod.yml`
+4. Aggiunto blocco `spring.datasource.pa.*` con credenziali reali PostgreSQL in `application-dev.properties`
 
 ### Lavoro rimanente (schema DB) ⬜
 
@@ -177,12 +179,51 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
    - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` (persistenza token tra riavvii)
 2. Creare entity JPA (`@Entity`) in `it.ariaspa.mypay.mypaycore.api.domain`
 3. Creare repository Spring Data in `it.ariaspa.mypay.mypaycore.api.repository`
-4. Configurare credenziali PostgreSQL reali nei profili `dev`, `uat`, `prod`
+4. Configurare credenziali PostgreSQL reali nel profilo `dev` in `application-dev.properties`
 
 ### Decisioni da prendere:
 - Schema DB e naming conventions
 - Strategia di migrazione (Flyway? Script manuali?)
 - Quali dati persistere vs. tenere solo in-memory
+
+---
+
+## Semplificazione Configurazione ✅
+
+**Obiettivo**: Semplificare l'ambiente di sviluppo eliminando i profili non utilizzati e standardizzando il formato dei file di configurazione.
+
+**Data**: Marzo 2026  
+**Risultato**: `mvn compile` → BUILD SUCCESS | `mvn test` → 22 test, 0 fallimenti, 0 errori
+
+### Attività completate ✅
+
+#### Eliminazione profili uat e prod
+- Rimossi i file `application-uat.yml` e `application-prod.yml` dal modulo `mypay.mypaycore-springboot`
+- Rimosso il file `application-uat.yml` (non esisteva `application-prod.yml` separato nel modulo springboot)
+- Unico profilo attivo rimasto: **`dev`**
+
+#### Conversione da YAML a Properties
+Tutti i file di configurazione sono stati migrati dal formato `.yml` al formato `.properties`:
+
+| File eliminato (YAML) | File creato (Properties) | Modulo |
+|-----------------------|--------------------------|--------|
+| `application.yml` | `application.properties` | `mypay.mypaycore-springboot` |
+| `application-dev.yml` | `application-dev.properties` | `mypay.mypaycore-springboot` |
+| `application-uat.yml` | *(eliminato senza sostituzione)* | `mypay.mypaycore-springboot` |
+| `application-prod.yml` | *(eliminato senza sostituzione)* | `mypay.mypaycore-springboot` |
+| `bootstrap.yml` | `bootstrap.properties` | `mypay.mypaycore-springboot` |
+| `config/application.yml` (test) | `config/application.properties` (test) | `mypay.mypaycore-springboot` |
+| `application.yml` | `application.properties` | `mypay.mypaycore-properties` |
+| `bootstrap.yml` | `bootstrap.properties` | `mypay.mypaycore-properties` |
+
+#### Fix prefisso datasource
+Nel modulo `mypay.mypaycore-properties`, il file `application.properties` usa correttamente il prefisso `spring.datasource.pa.*` (allineato con `DataSourceConfig.java`).
+
+#### Aggiornamento script di avvio
+Il file `mypay.mypaycore-properties/src/main/resources/startup.sh` è stato aggiornato con il flag `--spring.profiles.active=dev`.
+
+#### Aggiornamento AGENTS.md
+La tabella dei profili in `AGENTS.md` è stata aggiornata per riflettere che attualmente esiste **un solo profilo attivo** (`dev`); i profili `uat` e `prod` sono da creare.
 
 ---
 
@@ -255,3 +296,5 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 - `WsConfigurerAdapter` deprecato in Spring WS bundled con Spring Boot 3.5.5 → usato interfaccia `WsConfigurer`
 - `springline2-ws` è una libreria client SOAP, non server → aggiunto `spring-boot-starter-web-services` separatamente
 - DataSource configurato manualmente con prefisso `spring.datasource.pa.*` tramite `DataSourceConfig.java` (Spring Boot non auto-configura datasource con prefissi personalizzati)
+- File di configurazione in formato **`.properties`** (migrazione da `.yml` completata — vedi sezione "Semplificazione Configurazione")
+- Profilo attivo per lo sviluppo: **`dev`** (i profili `uat` e `prod` sono stati rimossi e verranno ricreati al momento del deployment)
