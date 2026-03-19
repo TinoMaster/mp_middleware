@@ -48,7 +48,10 @@ mypay.mypaycore/                         ← root, parent POM
 │   └── springline2/RIASUNTO_SPRINGLINE2.md
 ├── .opencode/
 │   ├── agents/                          ← agenti OpenCode
-│   │   └── planner.md                   ← @planner: pianificazione e documentazione
+│   │   ├── expert.md                    ← @expert: esperto tecnico principale del progetto
+│   │   ├── planner.md                   ← @planner: pianificazione e documentazione
+│   │   ├── tester.md                    ← @tester: testing Java e collection Postman
+│   │   └── orchestrator.md              ← @orchestrator: gestione ecosistema AI
 │   └── skills/                          ← skill OpenCode (conoscenza specializzata)
 │       └── springline2/
 │           └── SKILL.md                 ← conoscenza completa framework SpringLine2
@@ -144,7 +147,10 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 
 | Agente | Quando usarlo |
 |--------|---------------|
+| `@expert` | Decisioni architetturali, code review, debugging complesso, guida tecnica esperta sul middleware SOAP ↔ OAuth2, valutazione rischi e debito tecnico |
 | `@planner` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche |
+| `@tester` | Scrivere test unitari Java (JUnit 5 + Mockito), test di integrazione (@SpringBootTest, WireMock), gestire la collection Postman, aggiornare la guida test E2E |
+| `@orchestrator` | Gestire ecosistema AI: creare/auditare/ottimizzare agenti, skill, comandi e MCP server |
 
 ## Skill disponibili
 
