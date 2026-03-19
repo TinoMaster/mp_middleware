@@ -1,7 +1,7 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.3.0  
+**Versione**: 1.4.0  
 **Data**: Marzo 2026  
 **Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
@@ -147,17 +147,15 @@ mypay.mypaycore-springboot/
     │   │   ├── health/
     │   │   └── soap/
     │   └── resources/config/
-    │       ├── application.yml        ← configurazione base
-    │       ├── application-dev.yml    ← profilo sviluppo connesso a UAT
-    │       ├── application-uat.yml    ← profilo User Acceptance Testing
-    │       ├── application-prod.yml   ← profilo produzione
-    │       └── bootstrap.yml
-    └── test/
-        ├── java/.../api/
-        │   ├── auth/OAuthTokenServiceTest.java
-        │   ├── client/PiattaformaUnitariaClientTest.java
-        │   └── soap/endpoint/ReconciliationEndpointTest.java
-        └── resources/config/application.yml
+     │       ├── application.properties        ← configurazione base (comune a tutti i profili)
+     │       ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
+     │       └── bootstrap.properties
+     └── test/
+         ├── java/.../api/
+         │   ├── auth/OAuthTokenServiceTest.java
+         │   ├── client/PiattaformaUnitariaClientTest.java
+         │   └── soap/endpoint/ReconciliationEndpointTest.java
+         └── resources/config/application.properties
 ```
 
 ### `mypay.mypaycore-db` (modulo database)
@@ -165,6 +163,20 @@ mypay.mypaycore-springboot/
 Contiene gli script SQL per il database. Attualmente contiene solo `000_PLACEHOLDER.sql`. Il modulo è gestito dal plugin `custom-package-plugin` (ARIA) che produce un archivio ZIP con gli script per il deployment. Gli script reali verranno aggiunti quando si definirà lo schema del database PostgreSQL.
 
 > **Nota**: Il tag `<summary>` è stato rimosso dalla configurazione del plugin perché non riconosciuto dalla versione `3.2.0` (causava un falso positivo in IntelliJ pur non compromettendo la build).
+
+### `mypay.mypaycore-properties` (modulo di configurazione per il deployment)
+
+Contiene i file di configurazione utilizzati durante il deployment su server. I file sono in formato **`.properties`**:
+
+```
+mypay.mypaycore-properties/
+└── src/main/resources/
+    ├── application.properties   ← template di configurazione per il deployment (DataSource, SSL, SpringLine2)
+    ├── bootstrap.properties     ← versione applicazione e configurazioni di bootstrap
+    └── startup.sh               ← script di avvio con --spring.profiles.active=dev
+```
+
+Il file `application.properties` in questo modulo è il **template di deployment**: contiene placeholder (`<INSERIRE ...>`) per tutte le proprietà sensibili (credenziali DB, password SSL, segreto JWT). Va completato prima del deploy su ogni ambiente.
 
 ---
 
@@ -216,17 +228,15 @@ api/
 **Tipo**: `@Configuration` + `@ConfigurationProperties(prefix = "piattaforma-unitaria")`  
 **Scopo**: Centralizza tutti i parametri di connessione verso la Piattaforma Unitaria.
 
-Questa classe legge automaticamente dal file `application.yml` il blocco:
+Questa classe legge automaticamente dal file `application.properties` il blocco:
 
-```yaml
-piattaforma-unitaria:
-  base-url: https://api.uat.p4pa.pagopa.it
-  auth:
-    token-url: https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token
-    client-id: SELC_99999000013SIL_RegLomb2
-    client-secret: xxxxx
-    grant-type: client_credentials
-    scope: openid
+```properties
+piattaforma-unitaria.base-url=https://api.uat.p4pa.pagopa.it
+piattaforma-unitaria.auth.token-url=${piattaforma-unitaria.base-url}/pu/auth/oauth/token
+piattaforma-unitaria.auth.client-id=${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
+piattaforma-unitaria.auth.client-secret=${PIATTAFORMA_CLIENT_SECRET:xxxxx}
+piattaforma-unitaria.auth.grant-type=client_credentials
+piattaforma-unitaria.auth.scope=openid
 ```
 
 **Proprietà esposte**:
@@ -276,24 +286,18 @@ piattaforma-unitaria:
 
 Tutti i bean sono annotati con `@Primary` poiché è il datasource unico dell'applicazione.
 
-**Configurazione YAML corrispondente** (esempio profilo `dev`):
-```yaml
-spring:
-  datasource:
-    pa:
-      driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://localhost:5432/mypay_local_copy
-      username: admin
-      password: admin
-      hikari:
-        minimum-idle: 1
-        maximum-pool-size: 5
-        pool-name: HikariPool-PA-dev
-  jpa:
-    show-sql: true
-    properties:
-      hibernate:
-        default_schema: mypay4
+**Configurazione Properties corrispondente** (esempio profilo `dev`):
+```properties
+spring.datasource.pa.driver-class-name=org.postgresql.Driver
+spring.datasource.pa.url=${DB_PA_URL:jdbc:postgresql://localhost:5432/mypay_local_copy}
+spring.datasource.pa.username=${DB_PA_USERNAME:admin}
+spring.datasource.pa.password=${DB_PA_PASSWORD:admin}
+spring.datasource.pa.hikari.minimum-idle=1
+spring.datasource.pa.hikari.maximum-pool-size=5
+spring.datasource.pa.hikari.pool-name=HikariPool-PA-dev
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.default_schema=mypay4
 ```
 
 **Aggiungere entity in futuro**: quando si creeranno classi JPA (`@Entity`), inserirle nel package `it.ariaspa.mypay.mypaycore.api.domain` e i repository corrispondenti in `it.ariaspa.mypay.mypaycore.api.repository`.
@@ -632,25 +636,20 @@ public String forwardSoapRequest(String path, String soapXml) { ... }
 
 #### Configurazione
 
-La configurazione avviene nel file `application.yml` sotto la chiave `resilience4j`:
+La configurazione avviene nel file `application.properties` sotto le chiavi `resilience4j.*`:
 
-```yaml
-resilience4j:
-  circuitbreaker:
-    instances:
-      piattaformaUnitaria:
-        sliding-window-type: COUNT_BASED
-        sliding-window-size: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 30s
-        permitted-number-of-calls-in-half-open-state: 3
-  retry:
-    instances:
-      piattaformaUnitaria:
-        max-attempts: 3
-        wait-duration: 1s
-        enable-exponential-backoff: true
-        exponential-backoff-multiplier: 2
+```properties
+# Circuit Breaker
+resilience4j.circuitbreaker.instances.piattaformaUnitaria.sliding-window-type=COUNT_BASED
+resilience4j.circuitbreaker.instances.piattaformaUnitaria.sliding-window-size=10
+resilience4j.circuitbreaker.instances.piattaformaUnitaria.failure-rate-threshold=50
+resilience4j.circuitbreaker.instances.piattaformaUnitaria.wait-duration-in-open-state=30s
+resilience4j.circuitbreaker.instances.piattaformaUnitaria.permitted-number-of-calls-in-half-open-state=3
+# Retry
+resilience4j.retry.instances.piattaformaUnitaria.max-attempts=3
+resilience4j.retry.instances.piattaformaUnitaria.wait-duration=1s
+resilience4j.retry.instances.piattaformaUnitaria.enable-exponential-backoff=true
+resilience4j.retry.instances.piattaformaUnitaria.exponential-backoff-multiplier=2
 ```
 
 #### Monitoraggio
@@ -700,60 +699,56 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ## 12. Ambienti e Profili
 
-Il progetto supporta quattro profili Spring, ognuno con una configurazione specifica.
+Il progetto utilizza attualmente **un solo profilo attivo**: `dev`. I profili `uat` e `prod` sono stati rimossi per semplificare l'ambiente di sviluppo; verranno ricreati quando necessario per il deployment in ambienti superiori.
+
+Tutti i file di configurazione sono in formato **`.properties`** (la migrazione da `.yml` è avvenuta contestualmente alla semplificazione dei profili).
 
 ### Panoramica profili
 
-| Profilo | Attivazione | Piattaforma target | Sicurezza | Logging |
-|---------|------------|-------------------|-----------|---------|
-| `dev` | Sviluppo con UAT reale | `api.uat.p4pa.pagopa.it` | JWT disabilitato (anonymous) | DEBUG |
-| `uat` | Test di accettazione | `api.uat.p4pa.pagopa.it` | JWT abilitato | INFO |
-| `prod` | Produzione | URL da env var | JWT abilitato + segreti da env var | WARN |
-| *(default)* | Base (esteso dagli altri) | `api.uat.p4pa.pagopa.it` | JWT su `/pu/sil/soap/**` | INFO |
+| Profilo | Stato | Piattaforma target | Sicurezza | Logging |
+|---------|-------|-------------------|-----------|---------|
+| `dev` | **Attivo** | `api.uat.p4pa.pagopa.it` | JWT disabilitato (anonymous) | DEBUG |
+| `uat` | Da creare | `api.uat.p4pa.pagopa.it` | JWT abilitato | INFO |
+| `prod` | Da creare | URL da env var | JWT abilitato + segreti da env var | WARN |
+| *(base)* | Sempre attivo | `api.uat.p4pa.pagopa.it` | JWT su `/pu/sil/soap/**` | INFO |
 
 ---
 
-### Profilo `dev` (`application-dev.yml`)
+### Profilo `dev` (`application-dev.properties`)
 
 **Quando usarlo**: Sviluppo che richiede connessione reale all'ambiente UAT di pagoPA.
 
 **Caratteristiche**:
 - Punta all'ambiente UAT reale (`api.uat.p4pa.pagopa.it`)
-- Credenziali OAuth2 dal file `.env` o variabile d'ambiente `PIATTAFORMA_CLIENT_SECRET`
+- Credenziali OAuth2 da variabili d'ambiente (`PIATTAFORMA_CLIENT_ID`, `PIATTAFORMA_CLIENT_SECRET`) o dal file `.env` (gitignored)
 - **Sicurezza JWT disabilitata** — i SIL non inviano JWT; l'autenticazione avviene tramite `codIpaEnte` + `password` nel body SOAP
-- Configurazione `spl.security`: `jwt.enabled: false`, `anonymous` per `/**`
+- Configurazione SpringLine2 security: `jwt.enabled=false`, `anonymous` per `/**`
 - Logging DEBUG per il codice del middleware, Spring WS e RestTemplate
-- Actuator health con dettagli sempre visibili (`show-details: always`)
-- Resilience4j con parametri rilassati per non ostacolare il debugging
-- Database PostgreSQL locale (`localhost:5432/mypay_local_copy`)
+- Actuator health con dettagli sempre visibili (`show-details=always`)
+- Resilience4j con parametri rilassati per non ostacolare il debugging (soglia 80%, attesa 10s)
+- Database PostgreSQL locale (`localhost:5432/mypay_local_copy`), con supporto override tramite variabili d'ambiente `DB_PA_URL`, `DB_PA_USERNAME`, `DB_PA_PASSWORD`
 
 ---
 
-### Profilo `uat` (`application-uat.yml`)
+### Profilo base (senza suffisso — `application.properties`)
 
-**Quando usarlo**: Test di accettazione prima della messa in produzione.
+È la configurazione condivisa, sempre caricata. Il profilo `dev` sovrascrive solo le proprietà che gli servono.
 
-**Caratteristiche**:
-- Credenziali OAuth2 **solo da variabili d'ambiente** (`${PIATTAFORMA_CLIENT_ID}`, `${PIATTAFORMA_CLIENT_SECRET}`)
-- Logging INFO (meno verboso)
-- Actuator health con dettagli visibili solo agli utenti autorizzati
-- Parametri Resilience4j standard (ereditati dal profilo base)
+**Configurazioni principali**:
+- JPA base: `ddl-auto=none`, `show-sql=false`, `open-in-view=false`
+- Piattaforma target: `api.uat.p4pa.pagopa.it` (default UAT)
+- Resilience4j: parametri standard (finestra 10 chiamate, soglia 50%, attesa OPEN 30s)
+- Actuator: endpoints `health, info, metrics, circuitbreakers, retries`
+- SpringLine2 security: JWT richiesto su `/pu/sil/soap/**`, anonymous su Swagger e Actuator health
+- La configurazione del DataSource **non è nel profilo base** — ogni profilo dichiara la propria connessione
 
 ---
 
-### Profilo `prod` (`application-prod.yml`)
+### Profili `uat` e `prod` (da creare in futuro)
 
-**Quando usarlo**: Ambiente di produzione.
+I profili `uat` e `prod` sono stati rimossi nella fase di semplificazione dell'ambiente di sviluppo. Verranno ricreati come file `application-uat.properties` e `application-prod.properties` quando necessario per il deployment.
 
-**Caratteristiche**:
-- URL base da variabile d'ambiente obbligatoria (`${PIATTAFORMA_BASE_URL}`)
-- Tutte le credenziali da variabili d'ambiente — nessun valore di default
-- Il segreto JWT SpringLine2 deve essere fornito via `${SPL_JWT_CYPHER_SECRET}`
-- Actuator: solo `/actuator/health` e `/actuator/info` esposti, dettagli nascosti
-- Logging root a WARN, Spring WS a ERROR (minimo indispensabile)
-- Resilience4j più conservativo: finestra 20 chiamate, attesa OPEN 60s, 3 tentativi retry
-
-**Variabili d'ambiente obbligatorie in produzione**:
+**Variabili d'ambiente previste per il profilo `prod`** (da usare quando verrà creato):
 
 | Variabile | Descrizione |
 |-----------|-------------|
@@ -761,20 +756,6 @@ Il progetto supporta quattro profili Spring, ognuno con una configurazione speci
 | `PIATTAFORMA_CLIENT_ID` | Client ID OAuth2 |
 | `PIATTAFORMA_CLIENT_SECRET` | Client secret OAuth2 |
 | `SPL_JWT_CYPHER_SECRET` | Segreto per cifratura JWT SpringLine2 |
-
----
-
-### Profilo base (senza suffisso — `application.yml`)
-
-È la configurazione condivisa da tutti i profili. Ogni profilo specifico sovrascrive solo le proprietà che gli servono.
-
-**Configurazioni principali**:
-- JPA base: `ddl-auto: none`, `show-sql: false`, `open-in-view: false`
-- Piattaforma target: `api.uat.p4pa.pagopa.it` (default UAT)
-- Resilience4j: parametri standard
-- Actuator: endpoints `health, info, metrics, circuitbreakers, retries`
-- SpringLine2 security: JWT richiesto su `/pu/sil/soap/**`, anonymous su Swagger e Actuator health
-- La configurazione del DataSource **non è nel profilo base** — ogni profilo dichiara la propria connessione
 
 ---
 
@@ -1020,7 +1001,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
    - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` per persistere il token OAuth2 tra riavvii
 2. Creare entity JPA (`@Entity`) nel package `it.ariaspa.mypay.mypaycore.api.domain`
 3. Creare repository Spring Data nel package `it.ariaspa.mypay.mypaycore.api.repository`
-4. Aggiungere credenziali PostgreSQL reali nei profili `dev`, `uat`, `prod` (attualmente con placeholder)
+4. Aggiungere credenziali PostgreSQL reali nel profilo `dev` in `application-dev.properties` (attualmente con placeholder)
 
 **Decisioni da prendere**: naming convention delle tabelle, strategia di migrazione (Flyway? script manuali?), quali dati persistere.
 
