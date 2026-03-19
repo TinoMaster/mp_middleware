@@ -48,7 +48,8 @@ mypay.mypaycore/                         ← root, parent POM
 │   └── springline2/RIASUNTO_SPRINGLINE2.md
 ├── .opencode/
 │   ├── agents/                          ← agenti OpenCode
-│   │   └── planner.md                   ← @planner: pianificazione e documentazione
+│   │   ├── planner.md                   ← @planner: pianificazione e documentazione
+│   │   └── orchestrator.md              ← @orchestrator: gestione ecosistema AI
 │   └── skills/                          ← skill OpenCode (conoscenza specializzata)
 │       └── springline2/
 │           └── SKILL.md                 ← conoscenza completa framework SpringLine2
@@ -145,6 +146,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 | Agente | Quando usarlo |
 |--------|---------------|
 | `@planner` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche |
+| `@orchestrator` | Gestire ecosistema AI: creare/auditare/ottimizzare agenti, skill, comandi e MCP server |
 
 ## Skill disponibili
 
