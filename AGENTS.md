@@ -38,7 +38,7 @@ mypay.mypaycore/                         ← root, parent POM
 │       │   ├── common/exception/
 │       │   └── health/
 │       └── test/java/...
-├── mypay.mypaycore-properties/          ← application-*.yml per profilo
+├── mypay.mypaycore-properties/          ← application*.properties per il deploy
 ├── mypay.mypaycore-db/                  ← script SQL
 ├── docs/                                ← tutta la documentazione (in italiano)
 │   ├── architettura/ARCHITETTURA_MIDDLEWARE.md
@@ -64,7 +64,7 @@ mypay.mypaycore/                         ← root, parent POM
 1. **Non introdurre dipendenze non approvate** senza prima verificare la compatibilità con
    il parent POM corporate `it.ariaspa:cm:1.0.0`
 2. **Rispettare il prefisso datasource** `spring.datasource.pa.*` (non `spring.datasource.*`)
-3. **Non creare il profilo `local`** — è stato rimosso intenzionalmente; usare `dev`, `uat`, `prod`
+3. **Non creare il profilo `local`** — è stato rimosso intenzionalmente; l'unico profilo attivo è `dev`
 4. **Non rigenerare `shutdown.pid`** — rimosso intenzionalmente
 5. **Non usare `WsConfigurerAdapter`** (deprecato) — usare l'interfaccia `WsConfigurer`
 6. **Sicurezza XXE**: qualsiasi parsing XML deve usare `DocumentBuilderFactory` con DTD e
@@ -156,11 +156,14 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 
 ## Profili applicativi
 
-| Profilo | Scopo | Logging | Resilienza |
-|---------|-------|---------|-----------|
-| `dev` | Sviluppo locale | DEBUG | Rilassata |
-| `uat` | Test integrazione | INFO | Standard |
-| `prod` | Produzione | WARN | Conservativa |
+Attualmente è attivo **un solo profilo** per semplificare lo sviluppo e l'onboarding.
+I profili `uat` e `prod` verranno creati in futuro quando necessario.
+
+| Profilo | Scopo | Logging | Resilienza | Stato |
+|---------|-------|---------|-----------|-------|
+| `dev` | Sviluppo locale | DEBUG | Rilassata | **Attivo** |
+| `uat` | Test integrazione | INFO | Standard | Da creare |
+| `prod` | Produzione | WARN | Conservativa | Da creare |
 
 ---
 
