@@ -31,6 +31,7 @@ replay_pid*
 .vscode/
 *.swp
 *.swo
+opencode.jsonc
 *~
 
 # OS
@@ -40,17 +41,13 @@ desktop.ini
 
 # Spring Boot
 spring-boot-*/
+shutdown.pid
 
 
 # Logs
 logs/
 *.log
 log4j2*.xml
-
-# Application
-application-local.yml
-application-local.properties
-!src/main/resources/config/application-local.properties
 
 # Environment
 .env
