@@ -1,7 +1,7 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.1.0  
+**Versione**: 1.2.0  
 **Data**: Marzo 2026  
 **Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
@@ -20,13 +20,12 @@
 9. [Gestione degli Errori](#9-gestione-degli-errori)
 10. [Monitoraggio e Health Check](#10-monitoraggio-e-health-check)
 11. [Resilienza](#11-resilienza)
-12. [Mock della Piattaforma Unitaria](#12-mock-della-piattaforma-unitaria)
-13. [Ambienti e Profili](#13-ambienti-e-profili)
-14. [Test Unitari](#14-test-unitari)
-15. [Come avviare il progetto](#15-come-avviare-il-progetto)
-16. [Come testare il flusso completo](#16-come-testare-il-flusso-completo)
-17. [Cosa NON è ancora implementato](#17-cosa-non-è-ancora-implementato)
-18. [Prossimi passi — Fasi Future](#18-prossimi-passi--fasi-future)
+12. [Ambienti e Profili](#12-ambienti-e-profili)
+13. [Test Unitari](#13-test-unitari)
+14. [Come avviare il progetto](#14-come-avviare-il-progetto)
+15. [Come testare il flusso completo](#15-come-testare-il-flusso-completo)
+16. [Cosa NON è ancora implementato](#16-cosa-non-è-ancora-implementato)
+17. [Prossimi passi — Fasi Future](#17-prossimi-passi--fasi-future)
 
 ---
 
@@ -145,11 +144,9 @@ mypay.mypaycore-springboot/
     │   │   ├── common/
     │   │   ├── config/
     │   │   ├── health/
-    │   │   ├── mock/
     │   │   └── soap/
     │   └── resources/config/
     │       ├── application.yml        ← configurazione base
-    │       ├── application-local.yml  ← profilo sviluppo locale con mock
     │       ├── application-dev.yml    ← profilo sviluppo connesso a UAT
     │       ├── application-uat.yml    ← profilo User Acceptance Testing
     │       ├── application-prod.yml   ← profilo produzione
@@ -207,9 +204,6 @@ api/
 ├── health/                                  ← Health check Actuator
 │   ├── OAuthTokenHealthIndicator.java
 │   └── PiattaformaUnitariaHealthIndicator.java
-│
-└── mock/                                    ← Mock server (solo profilo local)
-    └── MockPiattaformaUnitariaController.java
 ```
 
 ---
@@ -281,19 +275,19 @@ piattaforma-unitaria:
 
 Tutti i bean sono annotati con `@Primary` poiché è il datasource unico dell'applicazione.
 
-**Configurazione YAML corrispondente** (esempio profilo `local`):
+**Configurazione YAML corrispondente** (esempio profilo `dev`):
 ```yaml
 spring:
   datasource:
     pa:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://10.199.144.62:5432/mypay4.pa
-      username: mypay4.pa
-      password: mypay4.pa
+      url: jdbc:postgresql://localhost:5432/mypay_local_copy
+      username: admin
+      password: admin
       hikari:
         minimum-idle: 1
         maximum-pool-size: 5
-        pool-name: HikariPool-PA-local
+        pool-name: HikariPool-PA-dev
   jpa:
     show-sql: true
     properties:
@@ -581,7 +575,7 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 **Scopo**: Verifica la raggiungibilità della Piattaforma Unitaria.
 
 **Logica**:
-- Effettua una GET leggera verso la base URL (o `/mock/status` in profilo `local`)
+- Effettua una GET leggera verso la base URL della Piattaforma Unitaria
 - Timeout ridotti: connect 3s, read 5s
 - `UP`: la piattaforma risponde
 - `DOWN`: timeout, errore di rete, o risposta di errore
@@ -703,84 +697,18 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ---
 
-## 12. Mock della Piattaforma Unitaria
+## 12. Ambienti e Profili
 
-### `MockPiattaformaUnitariaController.java`
-
-**Tipo**: `@RestController` + `@Profile("local")`  
-**Scopo**: Simula la Piattaforma Unitaria all'interno dello stesso processo applicativo, permettendo di testare il flusso completo senza connessione a servizi esterni.
-
-**Attivo**: SOLO quando il profilo Spring è `local`. In tutti gli altri profili questo bean non viene creato.
-
-**Endpoint esposti** (tutti sotto `/mock`):
-
-| Endpoint | Metodo | Content-Type | Descrizione |
-|----------|--------|-------------|-------------|
-| `/mock/status` | GET | application/json | Diagnostica: verifica che il mock sia attivo |
-| `/mock/pu/auth/oauth/token` | POST | form-urlencoded → JSON | Simula il token OAuth2 |
-| `/mock/pu/sil/soap/reconciliation/...` | POST | text/xml | Simula la risposta SOAP |
-
-**Comportamento del mock OAuth2**:
-- Accetta qualsiasi `client_id` e `client_secret` senza validazione
-- Restituisce un token fittizio con `expires_in: 3600`
-- Logga i parametri ricevuti per debugging
-
-**Comportamento del mock SOAP**:
-- Estrae `codIpaEnte` e `tipoFlusso` dal payload XML ricevuto
-- Restituisce una risposta SOAP con `codiceEsito: 0` (successo)
-- Include un `identificativoFlusso` generato casualmente (`MOCK-XXXXXXXX`)
-
-**Esempio di risposta mock**:
-```xml
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
-    <soapenv:Header>
-        <ppthead:intestazionePPT xmlns:ppthead="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead">
-            <codIpaEnte>SELC_99999000013</codIpaEnte>
-        </ppthead:intestazionePPT>
-    </soapenv:Header>
-    <soapenv:Body>
-        <ente:pivotSILAutorizzaImportFlussoTesoreria_RPT_risposta>
-            <codIpaEnte>SELC_99999000013</codIpaEnte>
-            <tipoFlusso>O</tipoFlusso>
-            <codiceEsito>0</codiceEsito>
-            <descrizioneEsito>Operazione completata con successo (MOCK)</descrizioneEsito>
-            <identificativoFlusso>MOCK-A3F7C2D1</identificativoFlusso>
-        </ente:pivotSILAutorizzaImportFlussoTesoreria_RPT_risposta>
-    </soapenv:Body>
-</soapenv:Envelope>
-```
-
----
-
-## 13. Ambienti e Profili
-
-Il progetto supporta cinque profili Spring, ognuno con una configurazione specifica.
+Il progetto supporta quattro profili Spring, ognuno con una configurazione specifica.
 
 ### Panoramica profili
 
 | Profilo | Attivazione | Piattaforma target | Sicurezza | Logging |
 |---------|------------|-------------------|-----------|---------|
-| `local` | Sviluppo senza rete esterna | Mock interno (localhost) | Disabilitata (tutto anonymous) | DEBUG |
 | `dev` | Sviluppo con UAT reale | `api.uat.p4pa.pagopa.it` | JWT disabilitato (anonymous) | DEBUG |
 | `uat` | Test di accettazione | `api.uat.p4pa.pagopa.it` | JWT abilitato | INFO |
 | `prod` | Produzione | URL da env var | JWT abilitato + segreti da env var | WARN |
 | *(default)* | Base (esteso dagli altri) | `api.uat.p4pa.pagopa.it` | JWT su `/pu/sil/soap/**` | INFO |
-
----
-
-### Profilo `local` (`application-local.yml`)
-
-**Quando usarlo**: Sviluppo locale senza accesso alla Piattaforma Unitaria reale.
-
-**Caratteristiche**:
-- `piattaforma-unitaria.base-url` punta a `http://localhost:8080/mock`
-- Il `MockPiattaformaUnitariaController` è attivo (simula OAuth2 + SOAP)
-- Tutta la sicurezza SpringLine2 è disabilitata (`uri-matchers: /**` con anonymous)
-- Logging a livello DEBUG su tutti i pacchetti del middleware
-- Tutti gli endpoint Actuator sono esposti senza restrizioni (`include: "*"`)
-- Resilience4j con parametri rilassati (circuit breaker apre all'80% su 5 chiamate)
-- Il `PiattaformaUnitariaHealthIndicator` usa `/mock/status` come URL di health check
 
 ---
 
@@ -849,7 +777,7 @@ Il progetto supporta cinque profili Spring, ognuno con una configurazione specif
 
 ---
 
-## 14. Test Unitari
+## 13. Test Unitari
 
 Il progetto ha **22 test unitari** suddivisi in 3 classi, tutti con risultato BUILD SUCCESS.
 
@@ -904,7 +832,7 @@ Testa l'endpoint SOAP di riconciliazione con approccio proxy trasparente.
 
 ---
 
-## 15. Come avviare il progetto
+## 14. Come avviare il progetto
 
 ### Pre-requisiti
 
@@ -930,12 +858,6 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -f mypay.mypay
 cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn clean install -Denforcer.skip=true"
 ```
 
-### Avvio in modalità locale (consigliato per sviluppo)
-
-```bash
-cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=local"
-```
-
 ### Avvio in modalità dev (connessione a PU UAT reale)
 
 ```bash
@@ -949,8 +871,8 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& set PIATTAFORMA_CLIENT_
 
 1. **Run → Edit Configurations → + → Maven**
 2. Configurare:
-   - **Name**: `MyPayCore — local`
-   - **Command**: `spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=local`
+   - **Name**: `MyPayCore — dev`
+   - **Command**: `spring-boot:run -f mypay.mypaycore-springboot/pom.xml -Denforcer.skip=true -Dspring-boot.run.profiles=dev`
    - **Working directory**: root del progetto (`mypay.mypaycore`)
 
 ### Note sul flag `-Denforcer.skip=true`
@@ -959,79 +881,9 @@ Il POM padre corporativo (`it.ariaspa:cm:1.0.0`) ha un plugin enforcer che verif
 
 ---
 
-## 16. Come testare il flusso completo
+## 15. Come testare il flusso completo
 
-### 16.1 Test con profilo `local` (mock interno)
-
-Con l'applicazione avviata in profilo `local` su `http://localhost:8080`:
-
-#### Passo 1 — Verifica che il mock sia attivo
-
-```
-GET http://localhost:8080/mock/status
-```
-Risposta attesa:
-```json
-{
-  "status": "UP",
-  "profile": "local",
-  "description": "Mock Piattaforma Unitaria attivo"
-}
-```
-
-#### Passo 2 — Health check del middleware
-
-```
-GET http://localhost:8080/actuator/health
-```
-
-#### Passo 3 — Chiamata SOAP principale (simula un SIL)
-
-Importare in **Postman**: `requests/MyPay-Middleware-Local.postman_collection.json`  
-Importare in **SoapUI**: `requests/MyPay-Middleware-Local-soapui.xml`
-
-Oppure chiamata diretta:
-
-```
-POST http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati
-Content-Type: text/xml;charset=UTF-8
-SOAPAction: pivotSILAutorizzaImportFlussoTesoreria
-```
-
-Body:
-```xml
-<soapenv:Envelope
-    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-    xmlns:ppt="http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead"
-    xmlns:ente="http://www.regione.veneto.it/pagamenti/pivot/ente/">
-    <soapenv:Header>
-        <ppt:intestazionePPT>
-            <codIpaEnte>SELC_99999000013</codIpaEnte>
-        </ppt:intestazionePPT>
-    </soapenv:Header>
-    <soapenv:Body>
-        <ente:pivotSILAutorizzaImportFlussoTesoreria>
-            <password>BERGAMO</password>
-            <tipoFlusso>O</tipoFlusso>
-        </ente:pivotSILAutorizzaImportFlussoTesoreria>
-    </soapenv:Body>
-</soapenv:Envelope>
-```
-
-**Flusso interno che si attiva**:
-```
-Postman → ReconciliationEndpoint (Spring WS)
-            → PiattaformaUnitariaClient.forwardSoapRequest()
-                → OAuthTokenInterceptor.intercept()
-                    → OAuthTokenService.getAccessToken()
-                        → POST /mock/pu/auth/oauth/token  ← token fittizio
-                → POST /mock/pu/sil/soap/...  ← risposta SOAP mock
-            → risposta SOAP a Postman
-```
-
----
-
-### 16.2 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
+### 15.1 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
 
 Con l'applicazione avviata in profilo `dev` su `http://localhost:8080`:
 
@@ -1133,7 +985,7 @@ Risposta attesa: `{"status":"UP","details":{"stato":"Token OAuth2 in cache valid
 
 ---
 
-## 17. Cosa NON è ancora implementato
+## 16. Cosa NON è ancora implementato
 
 Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora.
 
@@ -1152,7 +1004,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 ---
 
-## 18. Prossimi passi — Fasi Future
+## 17. Prossimi passi — Fasi Future
 
 ### Fase 2 — Persistenza Database (plumbing completato ✅)
 

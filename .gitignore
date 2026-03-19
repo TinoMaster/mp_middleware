@@ -47,11 +47,6 @@ logs/
 *.log
 log4j2*.xml
 
-# Application
-application-local.yml
-application-local.properties
-!src/main/resources/config/application-local.properties
-
 # Environment
 .env
 .env.*

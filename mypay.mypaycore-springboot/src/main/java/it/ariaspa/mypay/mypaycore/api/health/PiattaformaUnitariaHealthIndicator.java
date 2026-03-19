@@ -44,8 +44,7 @@ public class PiattaformaUnitariaHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         String baseUrl = config.getBaseUrl();
-        // Usa /mock/status se siamo in modalità locale, altrimenti la base URL
-        String healthUrl = baseUrl.contains("/mock") ? baseUrl + "/status" : baseUrl;
+        String healthUrl = baseUrl;
 
         try {
             // Tentativo leggero di connessione alla piattaforma
