@@ -1,7 +1,7 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.2.0  
+**Versione**: 1.3.0  
 **Data**: Marzo 2026  
 **Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
@@ -26,6 +26,7 @@
 15. [Come testare il flusso completo](#15-come-testare-il-flusso-completo)
 16. [Cosa NON è ancora implementato](#16-cosa-non-è-ancora-implementato)
 17. [Prossimi passi — Fasi Future](#17-prossimi-passi--fasi-future)
+18. [Agenti OpenCode](#18-agenti-opencode)
 
 ---
 
@@ -1065,6 +1066,35 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 4. Implementare producer/consumer con dead letter queue
 
 **Prerequisiti**: infrastruttura ActiveMQ disponibile, definizione dei casi d'uso asincroni.
+
+---
+
+## 18. Agenti OpenCode
+
+Il progetto utilizza **OpenCode** come strumento di sviluppo assistito da AI. Gli agenti personalizzati sono definiti in `.opencode/agents/` e le regole globali per tutti gli agenti si trovano in `AGENTS.md` nella root del repository.
+
+### Agenti disponibili
+
+| Agente | File | Quando usarlo |
+|--------|------|---------------|
+| `@planner` | `.opencode/agents/planner.md` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche al codice |
+
+### Come invocare un agente
+
+In OpenCode, gli agenti si invocano con `@nome-agente` nella chat. Ad esempio:
+
+```
+@planner aggiorna Plan.md con le modifiche della Fase 2
+@planner pianifica la Fase 3 — logica di business
+```
+
+### Regole globali (`AGENTS.md`)
+
+Il file `AGENTS.md` nella root del progetto definisce:
+- Struttura del repository e contesto del progetto
+- Vincoli tecnici obbligatori (profili, datasource, sicurezza XXE)
+- Comandi di build e test per ambiente Windows/WSL
+- Convenzioni di documentazione (italiano, versioning semantico)
 
 ---
 
