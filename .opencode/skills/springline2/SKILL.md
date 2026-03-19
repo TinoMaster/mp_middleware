@@ -382,7 +382,7 @@ public class MioService {
 ### Configurazione DataSource
 
 > ⚠️ In `mypay.mypaycore` il DataSource è configurato **manualmente** con prefisso `spring.datasource.pa.*`  
-> tramite `DataSourceConfig.java` — NON usa il prefisso `spl.datasource.*` di SpringLine2.
+> tramite `DataSourceConfiguration.java` e `JdbiConfiguration.java` — NON usa il prefisso `spl.datasource.*` di SpringLine2.
 
 ```yaml
 # Configurazione SpringLine2-Data standard (NON usata in mypay.mypaycore)
@@ -659,7 +659,7 @@ server:
 
 | Aspetto | Scelta in mypay.mypaycore | Note |
 |---------|--------------------------|------|
-| DataSource | Configurazione manuale `DataSourceConfig.java` | Prefisso `spring.datasource.pa.*`, NON `spl.datasource.*` |
+| DataSource | Configurazione manuale `DataSourceConfiguration.java` + `JdbiConfiguration.java` | Prefisso `spring.datasource.pa.*`, NON `spl.datasource.*` |
 | SOAP server | `spring-boot-starter-web-services` | `springline2-ws` usato solo come CLIENT verso pagoPA |
 | Autenticazione | Anonymous per endpoint `/ws/**` | I SIL chiamano via SOAP senza token |
 | Profili | `dev`, `uat`, `prod` | Profilo `local` rimosso intenzionalmente |

@@ -1,8 +1,8 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.4.0  
-**Data**: Marzo 2026  
+**Versione**: 1.5.0  
+**Data**: 19 Marzo 2026  
 **Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
 ---
@@ -110,7 +110,10 @@ Il progetto è costruito su **SpringLine2** (versione 2027.01.01), un framework 
 | `resilience4j-spring-boot3` | 2.2.0 | Circuit Breaker e Retry |
 | `spring-boot-starter-aop` | gestita da Spring Boot | Necessario per le annotazioni Resilience4j |
 | `spring-boot-starter-actuator` | gestita da Spring Boot | Health check e metriche |
-| `spring-boot-starter-data-jpa` | gestita da Spring Boot | JPA/Hibernate per accesso al database |
+| `spring-boot-starter-jdbc` | gestita da Spring Boot | Supporto JDBC e transaction manager Spring |
+| `jdbi3-spring5` | 3.27.0 | Integrazione Jdbi con contesto Spring |
+| `jdbi3-sqlobject` | 3.27.0 | DAO dichiarativi basati su interfacce e annotazioni SQL |
+| `jdbi3-stringtemplate4` | 3.27.0 | Template SQL dinamici per query Jdbi |
 | `postgresql` | gestita da Spring Boot | Driver JDBC PostgreSQL |
 | `spring-boot-starter-test` | gestita da Spring Boot | Test unitari (JUnit 5, Mockito) |
 | `spring-ws-test` | gestita da Spring Boot | Utility di test per SOAP |
@@ -192,7 +195,8 @@ api/
 ├── config/                                  ← Configurazione applicazione
 │   ├── PiattaformaUnitariaConfig.java
 │   ├── SoapWebServiceConfig.java
-│   └── DataSourceConfig.java
+│   ├── DataSourceConfiguration.java
+│   └── JdbiConfiguration.java
 │
 ├── auth/                                    ← Autenticazione OAuth2
 │   ├── OAuthTokenService.java
@@ -268,10 +272,10 @@ piattaforma-unitaria.auth.scope=openid
 
 ---
 
-### `DataSourceConfig.java`
+### `DataSourceConfiguration.java`
 
-**Tipo**: `@Configuration` + `@EnableJpaRepositories`  
-**Scopo**: Configura il DataSource PostgreSQL `pa` (database principale di MyPay) con pool HikariCP e JPA/Hibernate.
+**Tipo**: `@Configuration`  
+**Scopo**: Configura il DataSource PostgreSQL `pa` (database principale di MyPay) con pool HikariCP per l'accesso JDBC/Jdbi.
 
 **Perché è necessaria**: Spring Boot auto-configura il datasource solo se le proprietà seguono il prefisso standard `spring.datasource.*`. Il progetto usa il prefisso personalizzato `spring.datasource.pa.*` (convenzione ereditata dal progetto mypay4 legacy), quindi è necessaria una classe di configurazione esplicita.
 
@@ -280,11 +284,15 @@ piattaforma-unitaria.auth.scope=openid
 | Bean | Tipo | Descrizione |
 |------|------|-------------|
 | `paDataSourceProperties` | `DataSourceProperties` | Legge `spring.datasource.pa.*` (url, username, password, driver) |
-| `paDataSource` | `HikariDataSource` | Pool di connessioni; parametri da `spring.datasource.pa.hikari.*` |
-| `paEntityManagerFactory` | `LocalContainerEntityManagerFactoryBean` | JPA EntityManager; scansiona il package base per entity `@Entity` |
-| `paTransactionManager` | `PlatformTransactionManager` | Gestione transazioni JPA |
+| `dsPa` | `DataSource`/`HikariDataSource` | Pool di connessioni; parametri da `spring.datasource.pa.hikari.*` |
+| `tmPa` | `DataSourceTransactionManager` | Gestione transazioni JDBC condivisa con Jdbi |
 
-Tutti i bean sono annotati con `@Primary` poiché è il datasource unico dell'applicazione.
+Tutti i bean sono annotati con `@Primary` poiché e' il datasource unico dell'applicazione.
+
+**Dettagli rilevanti**:
+- supporta password cifrata tramite `spring.datasource.cryptPassword=true` e decrypt Jasypt
+- forza `autoCommit=false` sul datasource per demandare il controllo transazionale a Spring
+- espone il datasource con nome `dsPa`, riutilizzato dalla configurazione Jdbi
 
 **Configurazione Properties corrispondente** (esempio profilo `dev`):
 ```properties
@@ -295,12 +303,35 @@ spring.datasource.pa.password=${DB_PA_PASSWORD:admin}
 spring.datasource.pa.hikari.minimum-idle=1
 spring.datasource.pa.hikari.maximum-pool-size=5
 spring.datasource.pa.hikari.pool-name=HikariPool-PA-dev
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.properties.hibernate.default_schema=mypay4
 ```
 
-**Aggiungere entity in futuro**: quando si creeranno classi JPA (`@Entity`), inserirle nel package `it.ariaspa.mypay.mypaycore.api.domain` e i repository corrispondenti in `it.ariaspa.mypay.mypaycore.api.repository`.
+---
+
+### `JdbiConfiguration.java`
+
+**Tipo**: `@Configuration`  
+**Scopo**: Completa il layer di persistenza configurando l'istanza Jdbi primaria collegata al datasource `dsPa`.
+
+**Cosa fa**:
+- crea il bean `jdbiPa` usato dai componenti di accesso dati
+- avvolge il datasource in `TransactionAwareDataSourceProxy` per partecipare correttamente alle transazioni Spring
+- applica timeout globali alle query tramite `SqlStatements`
+- abilita il logging SQL tramite `JdbiSqlLogger` quando richiesto dalle proprieta'
+- installa automaticamente plugin Jdbi e `RowMapper` presenti nel contesto Spring
+- registra `SqlObjectPlugin` per supportare DAO dichiarativi con annotazioni `@SqlQuery`, `@SqlUpdate`, ecc.
+
+**Bean creati**:
+
+| Bean | Tipo | Descrizione |
+|------|------|-------------|
+| `jdbiPa` | `Jdbi` | Istanza primaria di Jdbi associata al datasource `dsPa` |
+| `sqlObjectPlugin` | `JdbiPlugin` | Abilita il modello SQL Object per DAO/interfacce annotate |
+| `messageSource` | `ResourceBundleMessageSource` | Message source condiviso per messaggi applicativi |
+
+**Utilizzo consigliato**:
+- definire DAO o repository Jdbi invece di entity e repository JPA
+- usare `@Transactional` sui servizi Spring quando piu' operazioni Jdbi devono partecipare alla stessa transazione
+- registrare `RowMapper` dedicati per il mapping dei result set verso DTO o model applicativi
 
 ---
 
@@ -735,7 +766,7 @@ Tutti i file di configurazione sono in formato **`.properties`** (la migrazione 
 È la configurazione condivisa, sempre caricata. Il profilo `dev` sovrascrive solo le proprietà che gli servono.
 
 **Configurazioni principali**:
-- JPA base: `ddl-auto=none`, `show-sql=false`, `open-in-view=false`
+- Nessuna configurazione JPA/Hibernate: il layer dati usa JDBC + Jdbi
 - Piattaforma target: `api.uat.p4pa.pagopa.it` (default UAT)
 - Resilience4j: parametri standard (finestra 10 chiamate, soglia 50%, attesa OPEN 30s)
 - Actuator: endpoints `health, info, metrics, circuitbreakers, retries`
@@ -973,7 +1004,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 | Funzionalità | Stato | Note |
 |-------------|-------|------|
-| Schema e tabelle del database PostgreSQL | Non implementato | Il DataSource è configurato e funzionante; mancano ancora le tabelle (`TRANSACTION_LOG`, `AUDIT_LOG`, ecc.) e le entity JPA corrispondenti |
+| Schema e tabelle del database PostgreSQL | Non implementato | Il DataSource e Jdbi sono configurati e funzionanti; mancano ancora le tabelle (`TRANSACTION_LOG`, `AUDIT_LOG`, ecc.) e i DAO/query Jdbi corrispondenti |
 | Logica di business (riconciliazione, tesoreria) | Non implementata | L'endpoint attuale fa solo forwarding del payload |
 | Trasformazione payload SOAP | Non implementata | Il payload viene inoltrato così com'è senza modifiche |
 | Validazione business dei dati in ingresso | Non implementata | Spring WS valida solo il namespace/localPart |
@@ -992,15 +1023,15 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 **Obiettivo originale**: Attivare la connessione al database e creare le tabelle necessarie per il middleware.
 
-**Stato**: Il **plumbing del database è completato** (Fase 2 completata). PostgreSQL è configurato e connesso tramite `DataSourceConfig.java` con pool HikariCP e JPA/Hibernate. Il datasource `pa` è attivo in tutti i profili.
+**Stato**: Il **plumbing del database e' completato** (Fase 2 completata). PostgreSQL e' configurato e connesso tramite `DataSourceConfiguration.java` con pool HikariCP; l'accesso ai dati e' basato su `JdbiConfiguration.java`. Il datasource `pa` e' attivo nel profilo `dev`.
 
 **Lavoro rimanente**:
 1. Definire lo schema PostgreSQL — creare script SQL in `mypay.mypaycore-db/src/main/sql/`:
    - Tabella `TRANSACTION_LOG` (traccia di ogni chiamata SIL → Piattaforma)
    - Tabella `AUDIT_LOG` (eventi di sicurezza, autenticazioni)
    - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` per persistere il token OAuth2 tra riavvii
-2. Creare entity JPA (`@Entity`) nel package `it.ariaspa.mypay.mypaycore.api.domain`
-3. Creare repository Spring Data nel package `it.ariaspa.mypay.mypaycore.api.repository`
+2. Creare DAO/repository Jdbi nel package applicativo dedicato all'accesso dati
+3. Definire query SQL, mapper e modelli necessari per il logging transazionale e l'audit
 4. Aggiungere credenziali PostgreSQL reali nel profilo `dev` in `application-dev.properties` (attualmente con placeholder)
 
 **Decisioni da prendere**: naming convention delle tabelle, strategia di migrazione (Flyway? script manuali?), quali dati persistere.

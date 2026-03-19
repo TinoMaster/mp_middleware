@@ -12,7 +12,7 @@ Il progetto è stato generato dall'archetype **SpringLine2** (ARIA S.p.A.) con c
 |------|-------|-------------|
 | Fase 1 | ✅ Completata | Fondazioni: pulizia demo, struttura middleware, OAuth2, endpoint SOAP |
 | Fase 5 | ✅ Completata | Resilienza, gestione errori, health check, profili multi-ambiente, test unitari |
-| Fase 2 | ✅ Completata (plumbing) | Persistenza su database PostgreSQL — DataSource, HikariCP, JPA configurati; tabelle ancora da definire |
+| Fase 2 | ✅ Completata (plumbing) | Persistenza su database PostgreSQL — DataSource, HikariCP e Jdbi configurati; schema e query applicative ancora da definire |
 | Semplificazione Configurazione | ✅ Completata | Eliminazione profili uat/prod, conversione configurazione da YAML a Properties, solo profilo `dev` attivo |
 | Fase 3 | ⬜ Da fare | Logica di business (riconciliazione, flussi tesoreria) |
 | Fase 4 | ⬜ Da fare | Endpoint SOAP aggiuntivi, contract-first con WSDL/XSD |
@@ -162,14 +162,14 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
 
 ## Fase 2 - Persistenza Database ✅ (Plumbing completato)
 
-**Obiettivo**: Configurare la connessione al database PostgreSQL e predisporre il layer JPA.
+**Obiettivo**: Configurare la connessione al database PostgreSQL e predisporre il layer JDBC/Jdbi.
 
 ### Attività completate ✅
 
-1. Aggiunto `spring-boot-starter-data-jpa` e driver `postgresql` in `pom.xml` (rimossi i placeholder commentati Oracle/HikariCP)
-2. Rimossa l'esclusione `DataSourceAutoConfiguration`; aggiunte proprietà JPA base (`ddl-auto=none`, `show-sql=false`, `open-in-view=false`)
-3. Creato `DataSourceConfig.java` — configurazione manuale HikariCP + `LocalContainerEntityManagerFactoryBean` + `JpaTransactionManager` (`@Primary`), legge `spring.datasource.pa.*`
-4. Aggiunto blocco `spring.datasource.pa.*` con credenziali reali PostgreSQL in `application-dev.properties`
+1. Configurato il driver `postgresql` insieme alle dipendenze `spring-boot-starter-jdbc` e Jdbi (`jdbi3-spring5`, `jdbi3-sqlobject`, `jdbi3-stringtemplate4`) nel `pom.xml`
+2. Creato `DataSourceConfiguration.java` — configurazione manuale HikariCP + `DataSourceTransactionManager` (`@Primary`), con lettura delle proprieta' `spring.datasource.pa.*`
+3. Creato `JdbiConfiguration.java` — istanza `jdbiPa`, plugin Jdbi, row mapper e supporto SQL Object
+4. Aggiunto blocco `spring.datasource.pa.*` con credenziali PostgreSQL nel profilo `dev`
 
 ### Lavoro rimanente (schema DB) ⬜
 
@@ -177,8 +177,8 @@ Commentate (da riattivare in Fase 2): `springline2-data`, `ojdbc11`, `HikariCP`.
    - Tabella `TRANSACTION_LOG` (log transazioni SIL ↔ Piattaforma)
    - Tabella `AUDIT_LOG` (audit eventi)
    - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` (persistenza token tra riavvii)
-2. Creare entity JPA (`@Entity`) in `it.ariaspa.mypay.mypaycore.api.domain`
-3. Creare repository Spring Data in `it.ariaspa.mypay.mypaycore.api.repository`
+2. Creare DAO/repository Jdbi e relativi SQL object nei package applicativi dedicati
+3. Definire query SQL, row mapper e modelli per persistenza e audit
 4. Configurare credenziali PostgreSQL reali nel profilo `dev` in `application-dev.properties`
 
 ### Decisioni da prendere:
@@ -217,7 +217,7 @@ Tutti i file di configurazione sono stati migrati dal formato `.yml` al formato 
 | `bootstrap.yml` | `bootstrap.properties` | `mypay.mypaycore-properties` |
 
 #### Fix prefisso datasource
-Nel modulo `mypay.mypaycore-properties`, il file `application.properties` usa correttamente il prefisso `spring.datasource.pa.*` (allineato con `DataSourceConfig.java`).
+Nel modulo `mypay.mypaycore-properties`, il file `application.properties` usa correttamente il prefisso `spring.datasource.pa.*` (allineato con `DataSourceConfiguration.java`).
 
 #### Aggiornamento script di avvio
 Il file `mypay.mypaycore-properties/src/main/resources/startup.sh` è stato aggiornato con il flag `--spring.profiles.active=dev`.
@@ -295,6 +295,6 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 - Il parent POM corporate (`it.ariaspa:cm:1.0.0`) ha enforcer plugin che richiede OS Unix → usare `-Denforcer.skip=true` su Windows
 - `WsConfigurerAdapter` deprecato in Spring WS bundled con Spring Boot 3.5.5 → usato interfaccia `WsConfigurer`
 - `springline2-ws` è una libreria client SOAP, non server → aggiunto `spring-boot-starter-web-services` separatamente
-- DataSource configurato manualmente con prefisso `spring.datasource.pa.*` tramite `DataSourceConfig.java` (Spring Boot non auto-configura datasource con prefissi personalizzati)
+- DataSource configurato manualmente con prefisso `spring.datasource.pa.*` tramite `DataSourceConfiguration.java`, integrato con `JdbiConfiguration.java` (Spring Boot non auto-configura datasource con prefissi personalizzati)
 - File di configurazione in formato **`.properties`** (migrazione da `.yml` completata — vedi sezione "Semplificazione Configurazione")
 - Profilo attivo per lo sviluppo: **`dev`** (i profili `uat` e `prod` sono stati rimossi e verranno ricreati al momento del deployment)
