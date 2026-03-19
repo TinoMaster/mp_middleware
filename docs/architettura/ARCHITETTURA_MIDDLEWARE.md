@@ -169,7 +169,7 @@ OAuthTokenService                    Piattaforma Unitaria
 | **WS** | `springline2-ws` | Client SOAP con supporto alla propagazione |
 
 **Moduli disabilitati (Fase 1):**
-- `springline2-data` - JPA/DataSource (nessuna persistenza in Fase 1)
+- `springline2-data` - non utilizzato; la persistenza attuale e' gestita con configurazione manuale DataSource + Jdbi
 - `springline2-jms` - ActiveMQ (non necessario in Fase 1)
 
 ---
@@ -348,18 +348,18 @@ Il sistema di logging MON/MON-APP di SpringLine2 e attivo per:
 
 ## 7. Configurazione
 
-### 7.1 Configurazione Applicativa (application.yml)
+### 7.1 Configurazione Applicativa (application.properties)
 
-La configurazione principale e organizzata in tre sezioni:
+La configurazione principale e' organizzata in tre sezioni:
 
-**Esclusione auto-configurazione DataSource** (Fase 1 senza DB):
-```yaml
-spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+**Configurazione DataSource/Jdbi** (profilo `dev`):
+```properties
+spring.datasource.pa.driver-class-name=org.postgresql.Driver
+spring.datasource.pa.url=${DB_PA_URL:jdbc:postgresql://localhost:5432/mypay_local_copy}
+spring.datasource.pa.username=${DB_PA_USERNAME:admin}
+spring.datasource.pa.password=${DB_PA_PASSWORD:admin}
+spring.datasource.pa.hikari.minimum-idle=1
+spring.datasource.pa.hikari.maximum-pool-size=5
 ```
 
 **Piattaforma Unitaria** (ambiente UAT):

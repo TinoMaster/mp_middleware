@@ -172,7 +172,7 @@ I profili `uat` e `prod` verranno creati in futuro quando necessario.
 | Vincolo | Dettaglio |
 |---------|-----------|
 | Enforcer Maven | Richiede OS Unix — usare `-Denforcer.skip=true` su Windows |
-| DataSource | Prefisso `spring.datasource.pa.*`, configurato manualmente in `DataSourceConfig.java` |
+| DataSource | Prefisso `spring.datasource.pa.*`, configurato manualmente in `DataSourceConfiguration.java` e integrato con `JdbiConfiguration.java` |
 | Spring WS | Libreria `springline2-ws` è client SOAP, non server — server gestito da `spring-boot-starter-web-services` |
 | Profilo `local` | Rimosso — non ricreare |
 | `shutdown.pid` | Rimosso — non ricreare logica `ApplicationPidFileWriter` |

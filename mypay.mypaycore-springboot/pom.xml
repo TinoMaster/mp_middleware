@@ -106,11 +106,7 @@
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
-		<!-- Database: Spring Data JPA + PostgreSQL -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
+		<!-- Database: PostgreSQL, JDBC e Jdbi -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
@@ -134,6 +130,63 @@
 			<artifactId>spring-ws-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+
+		<dependency>
+			<groupId>com.github.ulisesbocchio</groupId>
+			<artifactId>jasypt-spring-boot-starter</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
+
+		<dependency>
+			<groupId>org.jdbi</groupId>
+			<artifactId>jdbi3-spring5</artifactId>
+			<version>3.27.0</version>
+
+			<exclusions>
+				<exclusion>
+					<artifactId>jakarta.activation-api</artifactId>
+					<groupId>jakarta.activation</groupId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.jdbi</groupId>
+			<artifactId>jdbi3-sqlobject</artifactId>
+			<version>3.27.0</version>
+			<exclusions>
+				<exclusion>
+					<artifactId>jakarta.activation-api</artifactId>
+					<groupId>jakarta.activation</groupId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.jdbi</groupId>
+			<artifactId>jdbi3-stringtemplate4</artifactId>
+			<version>3.27.0</version>
+
+			<exclusions>
+				<exclusion>
+					<artifactId>jakarta.activation-api</artifactId>
+					<groupId>jakarta.activation</groupId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+			<!--scope>runtime</scope-->
+			<exclusions>
+				<exclusion>
+					<artifactId>jakarta.activation-api</artifactId>
+					<groupId>jakarta.activation</groupId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
 
 	</dependencies>
 
