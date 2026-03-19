@@ -47,8 +47,11 @@ mypay.mypaycore/                         ← root, parent POM
 │   ├── procedures/GUIDA_TEST_POSTMAN_END_TO_END.md
 │   └── springline2/RIASUNTO_SPRINGLINE2.md
 ├── .opencode/
-│   └── agents/                          ← agenti OpenCode
-│       └── planner.md                   ← @planner: pianificazione e documentazione
+│   ├── agents/                          ← agenti OpenCode
+│   │   └── planner.md                   ← @planner: pianificazione e documentazione
+│   └── skills/                          ← skill OpenCode (conoscenza specializzata)
+│       └── springline2/
+│           └── SKILL.md                 ← conoscenza completa framework SpringLine2
 └── AGENTS.md                            ← questo file
 ```
 
@@ -142,6 +145,12 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 | Agente | Quando usarlo |
 |--------|---------------|
 | `@planner` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche |
+
+## Skill disponibili
+
+| Skill | File | Quando caricarla |
+|-------|------|-----------------|
+| `springline2` | `.opencode/skills/springline2/SKILL.md` | Ogni volta che si lavora su configurazione, sicurezza, logging, client SOAP/REST o dipendenze SpringLine2 |
 
 ---
 
