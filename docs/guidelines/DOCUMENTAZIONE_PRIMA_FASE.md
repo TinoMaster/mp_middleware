@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.5.0  
-**Data**: 19 Marzo 2026  
-**Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
+**Versione**: 2.0.0  
+**Data**: 20 Marzo 2026  
+**Stato**: Fasi 1-7 e 9 completate — Routing completo, log transazionale, metriche, 124 test | Fase 8 bloccata (censimento endpoint)
 
 ---
 
@@ -16,17 +16,19 @@
 5. [Modulo di Configurazione](#5-modulo-di-configurazione)
 6. [Modulo di Autenticazione](#6-modulo-di-autenticazione)
 7. [Modulo Client Piattaforma](#7-modulo-client-piattaforma)
-8. [Modulo Endpoint SOAP](#8-modulo-endpoint-soap)
-9. [Gestione degli Errori](#9-gestione-degli-errori)
-10. [Monitoraggio e Health Check](#10-monitoraggio-e-health-check)
-11. [Resilienza](#11-resilienza)
-12. [Ambienti e Profili](#12-ambienti-e-profili)
-13. [Test Unitari](#13-test-unitari)
-14. [Come avviare il progetto](#14-come-avviare-il-progetto)
-15. [Come testare il flusso completo](#15-come-testare-il-flusso-completo)
-16. [Cosa NON è ancora implementato](#16-cosa-non-è-ancora-implementato)
-17. [Prossimi passi — Fasi Future](#17-prossimi-passi--fasi-future)
-18. [Agenti OpenCode](#18-agenti-opencode)
+8. [Modulo Persistenza (domain + repository)](#8-modulo-persistenza-domain--repository)
+9. [Modulo Routing](#9-modulo-routing)
+10. [Modulo Endpoint SOAP](#10-modulo-endpoint-soap)
+11. [Gestione degli Errori](#11-gestione-degli-errori)
+12. [Monitoraggio e Health Check](#12-monitoraggio-e-health-check)
+13. [Resilienza](#13-resilienza)
+14. [Ambienti e Profili](#14-ambienti-e-profili)
+15. [Test Unitari](#15-test-unitari)
+16. [Come avviare il progetto](#16-come-avviare-il-progetto)
+17. [Come testare il flusso completo](#17-come-testare-il-flusso-completo)
+18. [Cosa NON è ancora implementato](#18-cosa-non-è-ancora-implementato)
+19. [Prossimi passi — Fasi Future](#19-prossimi-passi--fasi-future)
+20. [Agenti OpenCode](#20-agenti-opencode)
 
 ---
 
@@ -50,41 +52,44 @@ Il middleware si interpone tra i due sistemi e:
 Ente Pubblico (SIL)
        │
        │  SOAP Request
-       │  POST /pu/sil/soap/reconciliation/...
+       │  POST /ws/pivot/PagamentiTelematiciPagatiRiconciliati
+       │       (oppure /ws/pa/..., /ws/fesp/...)
        │  Content-Type: text/xml
        │  Body: <soapenv:Envelope>
        │          <Header><codIpaEnte>...</codIpaEnte></Header>
        │          <Body><password>...</password></Body>
        │        </soapenv:Envelope>
        ▼
-┌─────────────────────────────────────────┐
-│         MIDDLEWARE (questo progetto)    │
-│                                         │
-│  1. Riceve la richiesta SOAP            │
-│  2. Estrae l'Envelope completo          │
-│     (Header + Body)                     │
-│  3. Ottiene token OAuth2 da pagoPA      │
-│     (o lo usa dalla cache)              │
-│  4. Inoltra l'Envelope completo         │
-│     con Bearer token OAuth2             │
-│  5. Riceve la risposta                  │
-│  6. Estrae il body dalla risposta       │
-│  7. Restituisce la risposta al SIL      │
-└─────────────────────────────────────────┘
-       │
-       │  POST /pu/sil/soap/...
-       │  Header: Authorization: Bearer <token-OAuth2>
-       │  Body: Envelope SOAP completo (stesso del SIL)
-       ▼
-Piattaforma Unitaria (pagoPA)
-       │
-       ▼
-     pagoPA
+┌──────────────────────────────────────────────────┐
+│           MIDDLEWARE (questo progetto)            │
+│                                                  │
+│  1. Riceve la richiesta SOAP                     │
+│  2. Estrae l'Envelope completo                   │
+│     (Header + Body)                              │
+│  3. [Fase 7] Determina la modalità di routing    │
+│     consultando il DB (per ente + operazione)    │
+│  4a. Modalità PU: ottiene token OAuth2,          │
+│      inoltra con Bearer token                    │
+│  4b. Modalità LEGACY: forward diretto            │
+│      al backend (senza OAuth2)                   │
+│  5. Riceve la risposta                           │
+│  6. Estrae il body dalla risposta                │
+│  7. Restituisce la risposta al SIL               │
+└──────────────────────────────────────────────────┘
+       │                           │
+       │  Modalità PU              │  Modalità LEGACY
+       │  POST /pu/sil/soap/...   │  POST /ws/pivot/...
+       │  Authorization: Bearer    │  (nessun token aggiunto)
+       ▼                           ▼
+ Piattaforma Unitaria        Backend Legacy
+     (pagoPA)              (mypay o mypivot)
 ```
 
 > **NOTA IMPORTANTE**: Il SIL **NON** invia un JWT/Bearer token. L'autenticazione del SIL
 > avviene tramite `codIpaEnte` (nell'Header SOAP) e `password` (nel Body SOAP).
 > Il middleware gestisce internamente l'autenticazione OAuth2 verso la Piattaforma Unitaria.
+> Il routing PU vs LEGACY è stato implementato nella Fase 7 tramite il `RoutingDecisionService`.
+> Ogni richiesta viene instradata dinamicamente in base alla configurazione dell'ente nel database.
 
 ---
 
@@ -123,7 +128,7 @@ Il progetto è costruito su **SpringLine2** (versione 2027.01.01), un framework 
 ```
 mypay.mypaycore/                    ← POM padre (aggregator)
 ├── mypay.mypaycore-springboot/     ← Applicazione Spring Boot (questo è il cuore)
-├── mypay.mypaycore-db/             ← Script SQL Oracle (placeholder per fase 2)
+├── mypay.mypaycore-db/             ← Script SQL PostgreSQL (3 script: tabelle ente_config, transaction_log, dati esempio)
 ├── mypay.mypaycore-properties/     ← Modulo proprietà (SpringLine2 config)
 └── mypay.mypaycore-release/        ← Modulo di packaging per il rilascio
 ```
@@ -147,23 +152,51 @@ mypay.mypaycore-springboot/
     │   │   ├── client/
     │   │   ├── common/
     │   │   ├── config/
+    │   │   ├── domain/
     │   │   ├── health/
+    │   │   ├── logging/
+    │   │   ├── metrics/
+    │   │   ├── repository/
+    │   │   ├── routing/
     │   │   └── soap/
     │   └── resources/config/
-     │       ├── application.properties        ← configurazione base (comune a tutti i profili)
-     │       ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
-     │       └── bootstrap.properties
-     └── test/
-         ├── java/.../api/
-         │   ├── auth/OAuthTokenServiceTest.java
-         │   ├── client/PiattaformaUnitariaClientTest.java
-         │   └── soap/endpoint/ReconciliationEndpointTest.java
-         └── resources/config/application.properties
+    │       ├── application.properties        ← configurazione base (comune a tutti i profili)
+    │       ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
+    │       └── bootstrap.properties
+    └── test/
+        ├── java/.../api/
+        │   ├── auth/OAuthTokenServiceTest.java
+        │   ├── client/
+        │   │   ├── PiattaformaUnitariaClientTest.java
+        │   │   └── ProxyForwardingClientTest.java
+        │   ├── config/
+        │   │   ├── PathRegistryConfigTest.java
+        │   │   └── BackendRoutingConfigTest.java
+        │   ├── domain/DomainModelTest.java
+        │   ├── health/EnteConfigHealthIndicatorTest.java
+        │   ├── logging/TransactionLoggingServiceTest.java
+        │   ├── metrics/MiddlewareMetricsServiceTest.java
+        │   ├── repository/
+        │   │   ├── EnteConfigRowMapperTest.java
+        │   │   └── EnteConfigCacheServiceTest.java
+        │   ├── routing/RoutingDecisionServiceTest.java
+        │   └── soap/
+        │       ├── endpoint/ReconciliationEndpointTest.java
+        │       └── exception/SoapFaultExceptionResolverTest.java
+        └── resources/config/application.properties
 ```
 
 ### `mypay.mypaycore-db` (modulo database)
 
-Contiene gli script SQL per il database. Attualmente contiene solo `000_PLACEHOLDER.sql`. Il modulo è gestito dal plugin `custom-package-plugin` (ARIA) che produce un archivio ZIP con gli script per il deployment. Gli script reali verranno aggiunti quando si definirà lo schema del database PostgreSQL.
+Contiene gli script SQL PostgreSQL per la creazione delle tabelle del middleware:
+
+| Script | Scopo |
+|--------|-------|
+| `001_CREATE_MWPAY_ENTE_CONFIG.sql` | Tabella configurazione routing per ente e operazione |
+| `002_CREATE_MWPAY_TRANSACTION_LOG.sql` | Tabella log transazionale delle richieste SOAP |
+| `003_INSERT_ENTE_CONFIG_EXAMPLE.sql` | Dati di esempio per l'ambiente di sviluppo |
+
+Il modulo è gestito dal plugin `custom-package-plugin` (ARIA) che produce un archivio ZIP con gli script per il deployment.
 
 > **Nota**: Il tag `<summary>` è stato rimosso dalla configurazione del plugin perché non riconosciuto dalla versione `3.2.0` (causava un falso positivo in IntelliJ pur non compromettendo la build).
 
@@ -193,10 +226,12 @@ api/
 ├── Application.java                         ← Entry point Spring Boot
 │
 ├── config/                                  ← Configurazione applicazione
-│   ├── PiattaformaUnitariaConfig.java
-│   ├── SoapWebServiceConfig.java
-│   ├── DataSourceConfiguration.java
-│   └── JdbiConfiguration.java
+│   ├── PiattaformaUnitariaConfig.java       (OAuth2 e URL Piattaforma Unitaria)
+│   ├── SoapWebServiceConfig.java            (@EnableWs + servlet su /ws/*)
+│   ├── PathRegistryConfig.java              (mapping path-prefix → backend — Fase 5)
+│   ├── BackendRoutingConfig.java            (URL backend mypay/mypivot — Fase 5)
+│   ├── DataSourceConfiguration.java         (DataSource PostgreSQL con HikariCP)
+│   └── JdbiConfiguration.java              (istanza Jdbi primaria)
 │
 ├── auth/                                    ← Autenticazione OAuth2
 │   ├── OAuthTokenService.java
@@ -204,23 +239,49 @@ api/
 │   └── dto/
 │       └── OAuthTokenResponse.java
 │
-├── client/                                  ← Client HTTP verso pagoPA
-│   └── PiattaformaUnitariaClient.java
+├── routing/                                 ← Logica di routing (Fase 7)
+│   ├── RoutingDecision.java                 (risultato immutabile della decisione)
+│   └── RoutingDecisionService.java          (cervello del routing: path + DB → decisione)
+│
+├── client/                                  ← Client HTTP
+│   ├── PiattaformaUnitariaClient.java       (verso PU con OAuth2)
+│   └── ProxyForwardingClient.java           (forward legacy senza OAuth2 — Fase 5)
 │
 ├── soap/                                    ← Endpoint SOAP lato SIL
 │   ├── endpoint/
-│   │   └── ReconciliationEndpoint.java
+│   │   └── ReconciliationEndpoint.java      (con routing dinamico, logging e metriche)
 │   └── exception/
-│       └── SoapFaultExceptionResolver.java
+│       └── SoapFaultExceptionResolver.java  (5 tipi di eccezione mappati)
+│
+├── domain/                                  ← Modelli dati (Fase 6)
+│   ├── ModalitaRouting.java                 (enum: PIATTAFORMA_UNITARIA, LEGACY)
+│   ├── EnteConfig.java                      (modello tabella mwpay_ente_config)
+│   └── TransactionLog.java                  (modello tabella mwpay_transaction_log)
+│
+├── repository/                              ← Accesso dati Jdbi (Fase 6)
+│   ├── EnteConfigRepository.java            (DAO Jdbi — SqlObject)
+│   ├── EnteConfigRowMapper.java
+│   ├── EnteConfigCacheService.java          (cache TTL in-memory — ConcurrentHashMap)
+│   ├── TransactionLogRepository.java        (DAO Jdbi — SqlObject)
+│   └── TransactionLogRowMapper.java
+│
+├── logging/                                 ← Log transazionale (Fase 9)
+│   └── TransactionLoggingService.java       (log su DB con resilienza — mai blocca il SIL)
+│
+├── metrics/                                 ← Metriche Micrometer (Fase 9)
+│   └── MiddlewareMetricsService.java        (Counter, Timer, Gauge per Actuator)
 │
 ├── common/                                  ← Classi condivise
 │   └── exception/
 │       ├── PiattaformaAuthenticationException.java
-│       └── PiattaformaCommunicationException.java
+│       ├── PiattaformaCommunicationException.java
+│       ├── EnteNonCensitoException.java     (Fase 7)
+│       └── PathNonRiconosciutoException.java (Fase 7)
 │
 ├── health/                                  ← Health check Actuator
 │   ├── OAuthTokenHealthIndicator.java
-│   └── PiattaformaUnitariaHealthIndicator.java
+│   ├── PiattaformaUnitariaHealthIndicator.java
+│   └── EnteConfigHealthIndicator.java       (Fase 9 — verifica enti configurati)
 ```
 
 ---
@@ -264,11 +325,48 @@ piattaforma-unitaria.auth.scope=openid
 **Scopo**: Configura Spring WS per esporre endpoint SOAP in ricezione dai SIL.
 
 **Cosa fa**:
-- Registra un `MessageDispatcherServlet` mappato su `/pu/sil/soap/*`
-- Questo servlet intercetta tutte le richieste HTTP POST con Content-Type `text/xml` verso quel path
+- Registra un `MessageDispatcherServlet` mappato su `/ws/*`
+- Questo servlet intercetta tutte le richieste HTTP POST con Content-Type `text/xml` verso i path dei backend (`/ws/pivot/*`, `/ws/pa/*`, `/ws/fesp/*`)
 - I singoli endpoint SOAP (annotati con `@Endpoint`) vengono rilevati automaticamente
 
 **Nota tecnica importante**: `springline2-ws` è una libreria client SOAP (per chiamare servizi esterni). Per esporre endpoint SOAP server-side è necessaria la dipendenza separata `spring-boot-starter-web-services`, che è stata aggiunta esplicitamente al pom.
+
+---
+
+### `PathRegistryConfig.java` (Fase 5)
+
+**Tipo**: `@Configuration` + `@ConfigurationProperties(prefix = "routing")`  
+**Scopo**: Registro configurabile dei path-prefix e il loro mapping verso i backend (mypay o mypivot).
+
+**Funzionamento**:
+- Legge la mappa `routing.path-map.*` da `application.properties`
+- Converte le chiavi normalizzate in path reali (`ws-pivot` → `/ws/pivot`)
+- Metodo `resolveBackend(String requestPath)` → `Optional<BackendDestinatario>` con longest-prefix matching
+- Enum interno `BackendDestinatario` (`MYPAY`, `MYPIVOT`)
+- Validazione `@PostConstruct`: fallisce se il path-map è vuoto
+
+**Proprietà**:
+```properties
+routing.path-map.ws-pivot=MYPIVOT
+routing.path-map.ws-pa=MYPAY
+routing.path-map.ws-fesp=MYPAY
+```
+
+---
+
+### `BackendRoutingConfig.java` (Fase 5)
+
+**Tipo**: `@Configuration` + `@ConfigurationProperties(prefix = "backend")`  
+**Scopo**: Centralizza gli URL dei backend legacy (mypay e mypivot).
+
+**Proprietà**:
+```properties
+backend.mypivot.base-url=${BACKEND_MYPIVOT_URL:http://localhost:8081}
+backend.mypay.base-url=${BACKEND_MYPAY_URL:http://localhost:8082}
+```
+
+**Metodo pubblico**:
+- `getBaseUrlFor(BackendDestinatario backend)` → `String` — restituisce l'URL base in base al tipo di backend
 
 ---
 
@@ -462,18 +560,315 @@ Richiesta SOAP ricevuta
 
 ---
 
-## 8. Modulo Endpoint SOAP
+### `ProxyForwardingClient.java` (Fase 5)
+
+**Tipo**: `@Service`  
+**Scopo**: Client HTTP per il forward trasparente verso i backend legacy (mypay/mypivot) in modalità legacy.
+
+**Differenze rispetto a `PiattaformaUnitariaClient`**:
+- **Nessun token OAuth2** — le credenziali SIL (`codIpaEnte` + `password`) viaggiano as-is nel payload SOAP
+- `RestTemplate` separato, senza `OAuthTokenInterceptor`
+- Nessuna trasformazione del payload
+- Circuit breaker e retry dedicati (`backendLegacy`)
+
+**Configurazione HTTP**:
+- Connect timeout: **5 secondi**
+- Read timeout: **30 secondi**
+- Content-Type: `text/xml` (SOAP)
+
+**Flusso di `forwardToBackend(String backendBaseUrl, String path, String soapXml)`**:
+
+```
+Richiesta SOAP ricevuta (modalità LEGACY)
+        │
+        ▼
+ Costruisce URL: backendBaseUrl + path
+ Imposta Content-Type: text/xml
+        │
+        ▼
+ POST verso backend legacy (mypay o mypivot)
+ (nessun token OAuth2 aggiunto — forward trasparente)
+        │
+   ┌────┴────────────────────────────────┐
+   │                                      │
+  OK                                   Errore
+   │                                      │
+   ▼                                      ▼
+ restituisce                        lancia eccezione tipizzata
+ response.getBody()                 (PiattaformaCommunicationException)
+```
+
+**Resilienza applicata**:
+- `@CircuitBreaker(name = "backendLegacy")`: circuit breaker dedicato (finestra 10, soglia 50%, attesa 30s)
+- `@Retry(name = "backendLegacy")`: retry con backoff esponenziale (3 tentativi, 1s → 2s → 4s)
+- `forwardToBackendFallback()`: risposta di fallback quando il circuit breaker è aperto
+
+---
+
+## 8. Modulo Persistenza (domain + repository)
+
+Questo modulo gestisce il layer di persistenza del middleware: modelli di dominio, accesso ai dati tramite Jdbi e cache in-memory per le configurazioni degli enti.
+
+### Modelli di dominio (`domain/`)
+
+#### `ModalitaRouting.java` (enum)
+
+**Tipo**: `enum`  
+**Scopo**: Rappresenta le due modalità di instradamento di una richiesta SOAP.
+
+| Valore | Descrizione |
+|--------|-------------|
+| `PIATTAFORMA_UNITARIA` | Inoltro con autenticazione OAuth2 verso la PU di pagoPA — il middleware aggiunge automaticamente il token Bearer |
+| `LEGACY` | Forward diretto al backend legacy (mypay o mypivot) — le credenziali SIL (`codIpaEnte` + `password`) viaggiano as-is nel body SOAP |
+
+Il valore viene letto dalla colonna `modalita_routing` della tabella `mwpay_ente_config`.
+
+---
+
+#### `EnteConfig.java` (modello)
+
+**Tipo**: POJO  
+**Scopo**: Rappresenta la configurazione di routing per un ente e un tipo di operazione specifico. Corrisponde a un record della tabella `mwpay_ente_config`.
+
+**Campi** (8):
+
+| Campo | Tipo | Descrizione |
+|-------|------|-------------|
+| `id` | `Long` | Identificativo univoco (chiave surrogata auto-generata) |
+| `codIpaEnte` | `String` | Codice IPA dell'ente pubblico (es. `"R_LOMBARDIA"`) |
+| `tipoOperazione` | `String` | Tipo di operazione SOAP — local part del messaggio (es. `"pivotSILAutorizzaImportFlussoTesoreria"`) |
+| `modalitaRouting` | `ModalitaRouting` | Modalità di instradamento: `PIATTAFORMA_UNITARIA` o `LEGACY` |
+| `attivo` | `boolean` | Flag di attivazione — consente di disabilitare una regola senza eliminarla |
+| `note` | `String` | Note libere (es. motivo della configurazione o ticket di riferimento) |
+| `dataCreazione` | `LocalDateTime` | Data e ora di creazione del record |
+| `dataAggiornamento` | `LocalDateTime` | Data e ora dell'ultimo aggiornamento |
+
+**Chiave logica**: la coppia `(codIpaEnte, tipoOperazione)`, vincolata da constraint `UNIQUE` a livello di database.
+
+**Costruttori**: vuoto (per Jdbi/Jackson) e completo (tutti gli 8 campi).
+
+---
+
+#### `TransactionLog.java` (modello)
+
+**Tipo**: POJO  
+**Scopo**: Rappresenta il log di una singola transazione SOAP processata dal middleware. Corrisponde a un record della tabella `mwpay_transaction_log`.
+
+**Campi** (11):
+
+| Campo | Tipo | Descrizione |
+|-------|------|-------------|
+| `id` | `Long` | Identificativo univoco (chiave surrogata auto-generata) |
+| `codIpaEnte` | `String` | Codice IPA dell'ente che ha effettuato la richiesta |
+| `tipoOperazione` | `String` | Tipo di operazione SOAP (local part del messaggio) |
+| `modalitaRouting` | `ModalitaRouting` | Modalità di instradamento utilizzata (PU o legacy) |
+| `destinazione` | `String` | Backend di destinazione: `"MYPAY"` o `"MYPIVOT"` |
+| `pathRichiesta` | `String` | Path HTTP della richiesta SOAP ricevuta dal SIL |
+| `httpStatusRisposta` | `Integer` | Codice di stato HTTP della risposta dal backend (null se non disponibile) |
+| `esito` | `String` | Esito della transazione: `"OK"` o `"ERRORE"` |
+| `messaggioErrore` | `String` | Messaggio di errore (solo se esito = ERRORE, senza dati sensibili) |
+| `durataMs` | `Long` | Durata della transazione in millisecondi |
+| `timestampRichiesta` | `LocalDateTime` | Timestamp della richiesta SOAP ricevuta dal middleware |
+
+**Costruttori**: vuoto (per Jdbi/Jackson) e completo (tutti gli 11 campi).
+
+**Nota**: Il logging è sincrono (post-request) ma non bloccante: se l'inserimento in DB fallisce, viene registrato un warning nel log applicativo senza interrompere la risposta al SIL.
+
+---
+
+### Repository Jdbi (`repository/`)
+
+#### `EnteConfigRepository.java` (DAO Jdbi)
+
+**Tipo**: `interface` con annotazioni Jdbi (`@SqlQuery`, `@SqlUpdate`)  
+**Scopo**: Accesso ai dati per la tabella `mwpay_ente_config`. Registrato come bean Spring tramite `JdbiConfiguration`.
+
+**Metodi** (6):
+
+| Metodo | Tipo SQL | Descrizione |
+|--------|----------|-------------|
+| `findByCodIpaEnteAndTipoOperazione(codIpaEnte, tipoOperazione)` | `@SqlQuery` | Recupera configurazione attiva per ente + operazione — query principale usata dal `RoutingDecisionService` |
+| `findAllByCodIpaEnte(codIpaEnte)` | `@SqlQuery` | Tutte le configurazioni attive di un ente, ordinate per `tipo_operazione` |
+| `findAllAttive()` | `@SqlQuery` | Tutte le configurazioni attive nel sistema — usata per popolare la cache in-memory |
+| `countAttive()` | `@SqlQuery` | Conteggio configurazioni attive — usata dall'health check |
+| `insert(codIpaEnte, tipoOperazione, modalitaRouting, note)` | `@SqlUpdate` | Inserisce una nuova regola di routing |
+| `updateModalitaRouting(codIpaEnte, tipoOperazione, modalitaRouting)` | `@SqlUpdate` | Aggiorna la modalità di routing e il timestamp `data_aggiornamento` |
+
+**Row mapper**: `EnteConfigRowMapper` (classe dedicata registrata con `@RegisterRowMapper`).
+
+---
+
+#### `TransactionLogRepository.java` (DAO Jdbi)
+
+**Tipo**: `interface` con annotazioni Jdbi  
+**Scopo**: Scrittura log transazionale nella tabella `mwpay_transaction_log`. Registrato come bean Spring tramite `JdbiConfiguration`.
+
+**Metodi** (1):
+
+| Metodo | Tipo SQL | Descrizione |
+|--------|----------|-------------|
+| `insert(codIpaEnte, tipoOperazione, modalitaRouting, destinazione, pathRichiesta, httpStatusRisposta, esito, messaggioErrore, durataMs)` | `@SqlUpdate` | Inserisce un record di log — 9 parametri via `@Bind` |
+
+**Row mapper**: `TransactionLogRowMapper` (registrato con `@RegisterRowMapper`, predisposto per future query di lettura).
+
+**Nota**: Le operazioni di lettura (reporting, diagnostica) potranno essere aggiunte in futuro. Attualmente il focus è sull'inserimento sincrono post-request.
+
+---
+
+### Cache in-memory (`EnteConfigCacheService.java`)
+
+**Tipo**: `@Service`  
+**Scopo**: Mantiene una copia in-memory della tabella `mwpay_ente_config` con un TTL configurabile, evitando query al DB a ogni richiesta SOAP.
+
+**Struttura interna**:
+
+| Componente | Tipo | Scopo |
+|-----------|------|-------|
+| `cache` | `ConcurrentHashMap<String, EnteConfig>` | Mappa thread-safe chiave → configurazione |
+| `ultimoCaricamento` | `volatile Instant` | Timestamp dell'ultimo refresh (inizializzato a `Instant.EPOCH`) |
+| `refreshLock` | `ReentrantLock` | Garantisce che un solo thread alla volta esegua il refresh |
+
+**Formato chiave**: `"codIpaEnte|tipoOperazione"` (es. `"R_LOMBARDIA|pivotSILAutorizzaImportFlussoTesoreria"`).
+
+**TTL configurabile**:
+```properties
+middleware.cache.ente-config.ttl-seconds=300   # default: 5 minuti
+```
+
+**Ciclo di vita**:
+
+```
+@PostConstruct → init()
+    → refreshCache() (caricamento iniziale da DB)
+        │
+        ▼
+  findByCodIpaEnteAndTipoOperazione(codIpaEnte, tipoOperazione)
+        │
+        ▼
+  refreshIfExpired()
+    → La cache è scaduta?
+        │
+    No ──┤──► restituisce dalla cache
+        │
+    Sì ──┤──► tryLock()
+              │
+         Ottenuto ──┤──► double-check + refreshCache()
+              │
+         Non ottenuto ──┤──► usa cache corrente (stale-while-revalidate)
+```
+
+**Metodi pubblici**:
+
+| Metodo | Descrizione |
+|--------|-------------|
+| `findByCodIpaEnteAndTipoOperazione(codIpaEnte, tipoOperazione)` | Recupera configurazione dalla cache (con refresh se TTL scaduto) |
+| `isEnteCensito(codIpaEnte)` | Verifica se l'ente ha almeno una configurazione attiva |
+| `size()` | Numero di entry in cache — usato dal `Gauge` Micrometer e dall'health check |
+| `forceRefresh()` | Forza il refresh indipendentemente dal TTL — utile per admin e test |
+
+**Pattern stale-while-revalidate**: Se il refresh fallisce (es. errore DB), la cache corrente viene mantenuta e l'errore viene registrato nel log applicativo. Questo garantisce che il middleware continui a funzionare anche in caso di temporanea indisponibilità del database.
+
+---
+
+## 9. Modulo Routing
+
+Questo modulo implementa la logica di decisione del routing — il "cervello" del gateway. Determina dove instradare ogni richiesta SOAP in base a due dimensioni: il path HTTP (per identificare il backend di destinazione) e la configurazione dell'ente nel database (per determinare la modalità di instradamento).
+
+### `RoutingDecision.java` (risultato immutabile)
+
+**Tipo**: Classe immutabile  
+**Scopo**: Contiene tutte le informazioni necessarie all'endpoint SOAP per instradare una richiesta.
+
+**Campi** (3):
+
+| Campo | Tipo | Descrizione |
+|-------|------|-------------|
+| `destinazione` | `BackendDestinatario` | Backend di destinazione (`MYPAY` o `MYPIVOT`), determinato dal path HTTP |
+| `modalita` | `ModalitaRouting` | Modalità di instradamento (`PIATTAFORMA_UNITARIA` o `LEGACY`), determinata dal DB |
+| `urlBackend` | `String` | URL base del backend, determinato da `BackendRoutingConfig` |
+
+**Metodi di convenienza**:
+
+| Metodo | Descrizione |
+|--------|-------------|
+| `isPiattaformaUnitaria()` | `true` se `modalita == PIATTAFORMA_UNITARIA` |
+| `isLegacy()` | `true` se `modalita == LEGACY` |
+| `getDestinazione()` | Restituisce il backend di destinazione |
+| `getModalita()` | Restituisce la modalità di instradamento |
+| `getUrlBackend()` | Restituisce l'URL base del backend |
+
+---
+
+### `RoutingDecisionService.java` (servizio di decisione)
+
+**Tipo**: `@Service`  
+**Scopo**: Servizio centrale di decisione del routing. Data una richiesta SOAP (identificata da `codIpaEnte`, `tipoOperazione` e `pathRichiesta`), produce una `RoutingDecision`.
+
+**Dipendenze** (3, iniettate via costruttore):
+
+| Dipendenza | Tipo | Scopo |
+|-----------|------|-------|
+| `pathRegistryConfig` | `PathRegistryConfig` | Risolve il path HTTP → backend di destinazione |
+| `enteConfigCacheService` | `EnteConfigCacheService` | Recupera la configurazione dell'ente dalla cache/DB |
+| `backendRoutingConfig` | `BackendRoutingConfig` | Fornisce l'URL base del backend di destinazione |
+
+**Algoritmo di decisione a 3 passi**:
+
+```
+decide(codIpaEnte, tipoOperazione, pathRichiesta)
+        │
+        ▼
+  Passo 1: Routing per path → destinazione backend
+    pathRegistryConfig.resolveBackend(pathRichiesta)
+        │
+    Non trovato ──► PathNonRiconosciutoException
+                    → SOAP Fault PATH_NON_RICONOSCIUTO (Client Fault)
+        │
+    Trovato ──► BackendDestinatario (MYPAY o MYPIVOT)
+        │
+        ▼
+  Passo 2: Routing per modalità → PU o legacy
+    enteConfigCacheService.findByCodIpaEnteAndTipoOperazione(codIpaEnte, tipoOperazione)
+        │
+    Non trovato ──► EnteNonCensitoException
+                    → SOAP Fault ENTE_NON_AUTORIZZATO (Client Fault)
+        │
+    Trovato ──► EnteConfig (con modalitaRouting)
+        │
+        ▼
+  Passo 3: Comporre la decisione
+    urlBackend = backendRoutingConfig.getBaseUrlFor(destinazione)
+        │
+        ▼
+    return RoutingDecision(destinazione, enteConfig.getModalitaRouting(), urlBackend)
+```
+
+**Importante**: Il servizio **non esegue alcuna comunicazione HTTP** — si limita a prendere la decisione. L'effettivo inoltro è responsabilità dell'endpoint SOAP (`ReconciliationEndpoint`) che utilizza `PiattaformaUnitariaClient` o `ProxyForwardingClient` in base alla decisione.
+
+---
+
+## 10. Modulo Endpoint SOAP
 
 ### `ReconciliationEndpoint.java`
 
 **Tipo**: `@Endpoint` (Spring WS)  
-**Scopo**: Riceve le richieste SOAP dai SIL e le inoltra alla Piattaforma Unitaria.
+**Scopo**: Riceve le richieste SOAP dai SIL e le instrada verso la Piattaforma Unitaria (con OAuth2) o verso il backend legacy (forward diretto), in base alla configurazione dell'ente nel database.
+
+**Dipendenze iniettate** (5, tutte via costruttore):
+
+| Dipendenza | Tipo | Scopo |
+|-----------|------|-------|
+| `piattaformaClient` | `PiattaformaUnitariaClient` | Inoltro verso la PU con OAuth2 |
+| `proxyForwardingClient` | `ProxyForwardingClient` | Forward trasparente verso i backend legacy |
+| `routingDecisionService` | `RoutingDecisionService` | Decisione di routing (path + DB → destinazione) |
+| `transactionLoggingService` | `TransactionLoggingService` | Log transazionale su DB |
+| `metricsService` | `MiddlewareMetricsService` | Raccolta metriche Micrometer |
 
 **Dettagli tecnici**:
 - Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
 - Header namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead`
 - Local part: `pivotSILAutorizzaImportFlussoTesoreria`
-- Path di ricezione: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
+- Path di ricezione: qualsiasi path sotto `/ws/*` (il routing Spring WS avviene per namespace + localPart, non per path HTTP)
 
 **Richiesta attesa dai SIL**:
 ```xml
@@ -498,15 +893,73 @@ Richiesta SOAP ricevuta
 </soapenv:Envelope>
 ```
 
-**Flusso interno dell'endpoint (proxy trasparente)**:
-1. Spring WS intercetta la richiesta SOAP in base al namespace/localPart
-2. L'endpoint riceve anche il `MessageContext`, da cui estrae il **SOAP Envelope completo** (Header + Body)
-3. L'Envelope viene serializzato in stringa XML tramite `SoapMessage.writeTo()`
-4. Chiama `piattaformaClient.forwardSoapRequest(path, envelopeXml)` — inoltra l'**intero Envelope**
-5. Riceve la risposta SOAP dalla PU (anch'essa un Envelope completo)
-6. Estrae il contenuto del `<Body>` dalla risposta con `extractBodyContent()`
-7. Converte il body in `Element` e lo restituisce a Spring WS
-8. Spring WS ri-avvolge l'Element in un nuovo SOAP Envelope e lo invia al SIL
+**Flusso interno di `handleReconciliationRequest()`**:
+
+```
+Richiesta SOAP dal SIL
+        │
+        ▼
+ 1. Estrae l'intero SOAP Envelope dal MessageContext
+    (SoapMessage.writeTo → ByteArrayOutputStream → String)
+        │
+        ▼
+ 2. Estrae codIpaEnte dall'Header SOAP
+    (extractCodIpaEnte: parsa l'Envelope XML,
+     cerca <codIpaEnte> prima per tag name,
+     poi per namespace HEADER_NAMESPACE_URI)
+        │
+        ▼
+ 3. Determina il path HTTP della richiesta originale
+    (extractRequestPath: TransportContextHolder
+     → HttpServletConnection → getRequestURI())
+        │
+        ▼
+ 4. Chiama routingDecisionService.decide(codIpaEnte, tipoOperazione, requestPath)
+    → restituisce RoutingDecision { destinazione, modalita, urlBackend }
+        │
+   ┌────┴────────────────────────────────┐
+   │                                      │
+ PU (isPiattaformaUnitaria)           LEGACY (isLegacy)
+   │                                      │
+   ▼                                      ▼
+ piattaformaClient                   proxyForwardingClient
+  .forwardSoapRequest(                .forwardToLegacyBackend(
+   PLATFORM_RECONCILIATION_PATH,       decision.getDestinazione(),
+   fullSoapEnvelope)                   requestPath, fullSoapEnvelope)
+   │                                      │
+   └──────────────┬───────────────────────┘
+                  │
+                  ▼
+ 5. Estrae il contenuto del Body dalla risposta SOAP
+    (extractBodyContent: cerca <Body> per namespace
+     → restituisce primo Element figlio)
+                  │
+                  ▼
+ 6. Registra successo:
+    - transactionLoggingService.logSuccesso(...)
+    - metricsService.registraSuccesso(...)
+                  │
+                  ▼
+ 7. Restituisce l'Element a Spring WS
+    (Spring WS lo ri-avvolge in un nuovo SOAP Envelope)
+```
+
+**Gestione errori**:
+- **Errori pre-routing** (ente non censito, path non riconosciuto): usa `logErrorePreRouting()` con `modalitaRouting="SCONOSCIUTA"` e `destinazione="SCONOSCIUTA"`
+- **Errori post-routing** (comunicazione fallita, timeout): usa `logErrore()` con la `RoutingDecision` già calcolata
+- In entrambi i casi: registra l'errore nelle metriche con `metricsService.registraErrore()`
+- Le eccezioni `RuntimeException` vengono propagate al `SoapFaultExceptionResolver`; le altre vengono avvolte in `RuntimeException`
+
+**Metodo `extractCodIpaEnte(String soapEnvelope)`**:
+- Parsifica l'intero Envelope XML usando `secureDocumentBuilderFactory`
+- Cerca `<codIpaEnte>` prima con `getElementsByTagName("codIpaEnte")` (namespace-agnostic)
+- Se non trovato, cerca con `getElementsByTagNameNS(HEADER_NAMESPACE_URI, "codIpaEnte")` (namespace-specific)
+- Lancia `IllegalStateException` se non trovato in nessuna delle due modalità
+
+**Metodo `extractRequestPath()`**:
+- Usa `TransportContextHolder.getTransportContext()` per accedere alla connessione HTTP
+- Castea a `HttpServletConnection` e chiama `getHttpServletRequest().getRequestURI()`
+- Fallback a `/ws/pivot` se il `TransportContext` non è disponibile
 
 > **NOTA**: Questo approccio "proxy trasparente" è necessario perché la PU richiede
 > l'Header SOAP con `codIpaEnte` per identificare l'ente. Se si inoltrasse solo il
@@ -526,7 +979,7 @@ Il parser XML è configurato con tutte le protezioni contro gli attacchi XXE (XM
 
 ---
 
-## 9. Gestione degli Errori
+## 11. Gestione degli Errori
 
 ### `SoapFaultExceptionResolver.java`
 
@@ -537,9 +990,13 @@ Il parser XML è configurato con tutte le protezioni contro gli attacchi XXE (XM
 
 | Eccezione | SOAP Fault | Codice errore |
 |-----------|-----------|---------------|
+| `EnteNonCensitoException` | `Client/Sender Fault` | `ENTE_NON_AUTORIZZATO` |
+| `PathNonRiconosciutoException` | `Client/Sender Fault` | `PATH_NON_RICONOSCIUTO` |
 | `PiattaformaAuthenticationException` | `Server/Receiver Fault` | `AUTH_ERROR` |
 | `PiattaformaCommunicationException` | `Server/Receiver Fault` | `COMM_ERROR` |
 | Qualsiasi altra `Exception` | `Server/Receiver Fault` | `INTERNAL_ERROR` |
+
+**Logica di classificazione**: Le eccezioni di routing (`EnteNonCensitoException`, `PathNonRiconosciutoException`) generano Fault **Client** perché rappresentano errori del chiamante (ente non autorizzato o path errato). Le eccezioni di comunicazione generano Fault **Server** perché rappresentano errori interni al middleware o ai backend.
 
 **Struttura del SOAP Fault restituito al SIL**:
 ```xml
@@ -580,7 +1037,28 @@ Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il c
 
 ---
 
-## 10. Monitoraggio e Health Check
+### `EnteNonCensitoException.java` (Fase 7)
+
+**Tipo**: `RuntimeException` con campi aggiuntivi `codIpaEnte` e `tipoOperazione`  
+**Quando viene lanciata**:
+- L'ente non è presente nella tabella `mwpay_ente_config`
+- L'ente è presente ma non ha una regola di routing attiva per il tipo di operazione richiesto
+
+**SOAP Fault generato**: `Client/Sender Fault` con codice `ENTE_NON_AUTORIZZATO`
+
+---
+
+### `PathNonRiconosciutoException.java` (Fase 7)
+
+**Tipo**: `RuntimeException` con campo aggiuntivo `requestPath`  
+**Quando viene lanciata**:
+- Il path HTTP della richiesta non corrisponde a nessun backend configurato nel `PathRegistryConfig`
+
+**SOAP Fault generato**: `Client/Sender Fault` con codice `PATH_NON_RICONOSCIUTO`
+
+---
+
+## 12. Monitoraggio e Health Check
 
 Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
@@ -618,7 +1096,55 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
 ---
 
-## 11. Resilienza
+### `EnteConfigHealthIndicator.java` (Fase 9)
+
+**Tipo**: `@Component` + `HealthIndicator`  
+**Scopo**: Verifica che nel sistema siano configurati enti attivi per il routing.
+
+**Logica**:
+- Interroga `EnteConfigCacheService.size()` per ottenere il numero di enti configurati
+- `UP`: se `entiConfigurati > 0` — almeno un ente configurato e attivo
+- `DOWN`: se la cache è vuota (nessun ente configurato)
+- `DOWN`: se si verifica un'eccezione durante il controllo (errore DB)
+- Il numero di enti configurati viene esposto come dettaglio nell'health check
+
+**Esempio di risposta Actuator**:
+```json
+{
+  "status": "UP",
+  "details": {
+    "entiConfigurati": 3
+  }
+}
+```
+
+---
+
+### `MiddlewareMetricsService.java` (Fase 9)
+
+**Tipo**: `@Service`  
+**Scopo**: Espone metriche operative del middleware tramite Micrometer, consultabili da Spring Boot Actuator (`/actuator/metrics`).
+
+**Metriche registrate**:
+
+| Metrica | Tipo Micrometer | Tag | Descrizione |
+|---------|----------------|-----|-------------|
+| `middleware.richieste.totali` | Counter | `ente`, `operazione`, `modalita`, `destinazione`, `esito` | Conteggio richieste per combinazione |
+| `middleware.richieste.durata` | Timer | `operazione`, `modalita`, `destinazione` | Distribuzione durata richieste (ms) |
+| `middleware.enti.configurati` | Gauge | — | Numero di enti attivi nella configurazione (collegato a `EnteConfigCacheService.size()`) |
+
+**Metodi principali**:
+
+| Metodo | Descrizione |
+|--------|-------------|
+| `registraSuccesso(codIpaEnte, tipoOperazione, decision, durataMs)` | Incrementa contatore con `esito=OK` e registra durata nel timer |
+| `registraErrore(codIpaEnte, tipoOperazione, decision, durataMs)` | Incrementa contatore con `esito=ERRORE` e registra durata nel timer |
+
+**Robustezza**: I parametri `null` vengono sostituiti con `"sconosciuto"`. Le eccezioni durante la registrazione delle metriche vengono catturate silenziosamente per non bloccare il flusso principale.
+
+---
+
+## 13. Resilienza
 
 Il middleware implementa la resilienza tramite la libreria **Resilience4j** (versione Spring Boot 3), applicata al metodo `PiattaformaUnitariaClient.forwardSoapRequest()`.
 
@@ -728,7 +1254,7 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ---
 
-## 12. Ambienti e Profili
+## 14. Ambienti e Profili
 
 Il progetto utilizza attualmente **un solo profilo attivo**: `dev`. I profili `uat` e `prod` sono stati rimossi per semplificare l'ambiente di sviluppo; verranno ricreati quando necessario per il deployment in ambienti superiori.
 
@@ -741,7 +1267,7 @@ Tutti i file di configurazione sono in formato **`.properties`** (la migrazione 
 | `dev` | **Attivo** | `api.uat.p4pa.pagopa.it` | JWT disabilitato (anonymous) | DEBUG |
 | `uat` | Da creare | `api.uat.p4pa.pagopa.it` | JWT abilitato | INFO |
 | `prod` | Da creare | URL da env var | JWT abilitato + segreti da env var | WARN |
-| *(base)* | Sempre attivo | `api.uat.p4pa.pagopa.it` | JWT su `/pu/sil/soap/**` | INFO |
+| *(base)* | Sempre attivo | `api.uat.p4pa.pagopa.it` | JWT su `/ws/**` | INFO |
 
 ---
 
@@ -770,7 +1296,7 @@ Tutti i file di configurazione sono in formato **`.properties`** (la migrazione 
 - Piattaforma target: `api.uat.p4pa.pagopa.it` (default UAT)
 - Resilience4j: parametri standard (finestra 10 chiamate, soglia 50%, attesa OPEN 30s)
 - Actuator: endpoints `health, info, metrics, circuitbreakers, retries`
-- SpringLine2 security: JWT richiesto su `/pu/sil/soap/**`, anonymous su Swagger e Actuator health
+- SpringLine2 security: JWT richiesto su `/ws/**`, anonymous su Swagger e Actuator health
 - La configurazione del DataSource **non è nel profilo base** — ogni profilo dichiara la propria connessione
 
 ---
@@ -790,9 +1316,9 @@ I profili `uat` e `prod` sono stati rimossi nella fase di semplificazione dell'a
 
 ---
 
-## 13. Test Unitari
+## 15. Test Unitari
 
-Il progetto ha **22 test unitari** suddivisi in 3 classi, tutti con risultato BUILD SUCCESS.
+Il progetto ha **124 test unitari** suddivisi in 14 classi, tutti con risultato BUILD SUCCESS.
 
 ### `OAuthTokenServiceTest` — 9 test
 
@@ -827,25 +1353,217 @@ Testa il client HTTP verso la Piattaforma Unitaria.
 | `shouldUseFallbackWhenCircuitBreakerOpen` | Circuit breaker aperto: usa il fallback |
 | `shouldBuildCorrectUrl` | URL costruito correttamente come baseUrl + path |
 
-### `ReconciliationEndpointTest` — 6 test
+### `ReconciliationEndpointTest` — 18 test (Fase 2→7→9)
 
-Testa l'endpoint SOAP di riconciliazione con approccio proxy trasparente.
+Testa l'endpoint SOAP di riconciliazione con routing dinamico, logging e metriche. Organizzata in 3 nested inner class.
+
+#### `FlussoBase` — 7 test
 
 | Test | Cosa verifica |
 |------|---------------|
-| `handleReconciliationRequest_forwardsFullEnvelopeAndReturnsResponse` | Flusso completo: estrae Envelope dal MessageContext, inoltra alla PU, estrae body dalla risposta |
-| `handleReconciliationRequest_throwsRuntimeException_onClientError` | Eccezione dal client: rilancia come RuntimeException |
-| `handleReconciliationRequest_usesCorrectServicePath` | Il path di inoltro è quello corretto (`/pu/sil/soap/reconciliation/...`) |
-| `handleReconciliationRequest_forwardsFullEnvelopeXml` | L'XML inoltrato contiene l'Envelope completo (Header + Body), non solo il Body |
-| `handleReconciliationRequest_extractsBodyFromPUResponse` | Il body estratto dalla risposta PU è corretto (solo contenuto del Body) |
-| `constants_haveCorrectValues` | Le costanti di namespace e path hanno i valori corretti (Veneto) |
+| `flussoPU_completo_estraeEnvelopeInoltraERispondeAlSIL` | Flusso completo PU: estrae Envelope, inoltra alla PU, estrae body dalla risposta |
+| `flussoLegacy_completo_forwardDirettoAlBackend` | Flusso completo legacy: forward diretto al backend senza OAuth2 |
+| `erroreClient_vienePropagatoComeRuntimeException` | Eccezione dal client: rilancia come RuntimeException |
+| `extractCodIpaEnte_estraeDaHeaderSoap` | Estrae correttamente codIpaEnte dall'Header SOAP |
+| `extractRequestPath_usaTransportContext` | Usa TransportContextHolder per estrarre il path HTTP |
+| `extractBodyContent_estraeContenutoBodyDaEnvelope` | Il body estratto dalla risposta è corretto (solo contenuto del Body) |
+| `costanti_hannoValoriCorretti` | Le costanti di namespace, path e tipo operazione hanno i valori corretti |
 
-> **Nota**: I test mockano `MessageContext` e `SoapMessage` per simulare l'estrazione
-> dell'Envelope SOAP completo, replicando il comportamento reale di Spring WS.
+#### `Routing` — 5 test
+
+| Test | Cosa verifica |
+|------|---------------|
+| `routingPU_usaPiattaformaClient` | In modalità PU, usa `PiattaformaUnitariaClient` |
+| `routingLegacy_usaProxyForwardingClient` | In modalità legacy, usa `ProxyForwardingClient` |
+| `enteNonCensito_propagaEccezione` | `EnteNonCensitoException` viene propagata al SoapFaultExceptionResolver |
+| `pathNonRiconosciuto_propagaEccezione` | `PathNonRiconosciutoException` viene propagata al SoapFaultExceptionResolver |
+| `requestPath_vienPassatoAlRoutingDecisionService` | Il path HTTP della richiesta viene inviato al `RoutingDecisionService` |
+
+#### `LoggingEMetriche` — 6 test
+
+| Test | Cosa verifica |
+|------|---------------|
+| `successo_registraLogTransazionale` | Su successo, chiama `transactionLoggingService.logSuccesso()` |
+| `successo_registraMetrica` | Su successo, chiama `metricsService.registraSuccesso()` |
+| `errorePostRouting_registraLogConDecision` | Su errore post-routing, chiama `logErrore()` con la RoutingDecision |
+| `errorePreRouting_registraLogSenzaDecision` | Su errore pre-routing, chiama `logErrorePreRouting()` |
+| `errore_registraMetricaErrore` | Su errore, chiama `metricsService.registraErrore()` |
+| `eccezioneGenerica_vieneAvvoltaInRuntimeException` | Eccezione non-runtime viene avvolta in RuntimeException |
+
+> **Nota**: I test mockano `MessageContext`, `SoapMessage`, `TransportContext` e tutti i servizi
+> per simulare i flussi completi in isolamento.
+
+### `PathRegistryConfigTest` — 12 test (Fase 5)
+
+Testa il registro configurabile di path-prefix → backend.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `init_conMappaValida_convertePathCorrettamente` | Conversione `ws-pivot` → `/ws/pivot` |
+| `init_conMappaVuota_lanciaEccezione` | Validazione `@PostConstruct` con mappa vuota |
+| `init_conMappaNulla_lanciaEccezione` | Validazione `@PostConstruct` con mappa nulla |
+| `resolveBackend_pathEsatto_trovaBackend` | Path esatto `/ws/pivot` → `MYPIVOT` |
+| `resolveBackend_pathConSottopercorso_trovaBackend` | Path con sotto-percorso `/ws/pivot/foo` → `MYPIVOT` |
+| `resolveBackend_pathNonRegistrato_restituisceVuoto` | Path non registrato → `Optional.empty()` |
+| `resolveBackend_pathNull_restituisceVuoto` | Path null → `Optional.empty()` |
+| `resolveBackend_pathVuoto_restituisceVuoto` | Path vuoto → `Optional.empty()` |
+| `resolveBackend_pathMypay_trovaBackend` | `/ws/pa` → `MYPAY` |
+| `resolveBackend_pathFesp_trovaBackend` | `/ws/fesp` → `MYPAY` |
+| `resolveBackend_longestPrefixMatching` | Longest-prefix matching corretto |
+| `resolveBackend_pathSenzaSlashIniziale` | Path senza slash iniziale gestito correttamente |
+
+### `BackendRoutingConfigTest` — 3 test (Fase 5)
+
+Testa la configurazione degli URL dei backend.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `getBaseUrlFor_mypay_restituisceUrlCorretto` | `MYPAY` → URL mypay |
+| `getBaseUrlFor_mypivot_restituisceUrlCorretto` | `MYPIVOT` → URL mypivot |
+| `getBaseUrlFor_backendNonRiconosciuto_lanciaEccezione` | Backend sconosciuto → eccezione |
+
+### `ProxyForwardingClientTest` — 6 test (Fase 5)
+
+Testa il client di forward trasparente verso i backend legacy.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `forwardToBackend_success` | Forward riuscito con risposta 200 |
+| `forwardToBackend_httpError` | Errore HTTP 500 → `PiattaformaCommunicationException` |
+| `forwardToBackend_timeout` | Timeout di rete → `PiattaformaCommunicationException` |
+| `forwardToBackend_correctUrl` | URL costruito come `backendBaseUrl + path` |
+| `forwardToBackend_contentType` | Header Content-Type impostato a `text/xml` |
+| `forwardToBackendFallback_circuitBreakerOpen` | Fallback quando circuit breaker è aperto |
+
+### `DomainModelTest` — 10 test (Fase 6)
+
+Testa i modelli di dominio `EnteConfig`, `TransactionLog` e l'enum `ModalitaRouting`.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `enteConfig_creazione_conTuttiICampi` | Creazione corretta di EnteConfig con tutti gli 8 campi |
+| `enteConfig_creazione_conBuilderMinimo` | Creazione con solo i campi obbligatori |
+| `enteConfig_modalitaRouting_piattaformaUnitaria` | Modalità PIATTAFORMA_UNITARIA assegnata correttamente |
+| `enteConfig_modalitaRouting_legacy` | Modalità LEGACY assegnata correttamente |
+| `transactionLog_creazione_conTuttiICampi` | Creazione corretta di TransactionLog con tutti gli 11 campi |
+| `transactionLog_creazione_conCampiMinimi` | Creazione con solo i campi obbligatori |
+| `transactionLog_esitoOk` | Esito "OK" impostato correttamente |
+| `transactionLog_esitoErrore` | Esito "ERRORE" con messaggio di errore |
+| `modalitaRouting_valori` | L'enum ha esattamente 2 valori: PIATTAFORMA_UNITARIA e LEGACY |
+| `modalitaRouting_valueOf` | `valueOf()` funziona correttamente per entrambi i valori |
+
+### `EnteConfigRowMapperTest` — 3 test (Fase 6)
+
+Testa il mapping dei risultati SQL verso il modello `EnteConfig`.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `map_conTuttiICampi_creaEnteConfigCorretto` | Mapping completo da ResultSet a EnteConfig |
+| `map_conCampiNull_gestisceCorrettamente` | Gestione corretta dei campi nullable |
+| `map_conModalitaRoutingLegacy_mappataCorrettamente` | Mapping corretto per modalità LEGACY |
+
+### `EnteConfigCacheServiceTest` — 11 test (Fase 6)
+
+Testa la cache in-memory con TTL per la configurazione degli enti.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `getConfig_primaChiamata_caricaDaDatabase` | Prima chiamata: carica da DB |
+| `getConfig_secondaChiamata_usaCache` | Seconda chiamata: usa la cache senza query DB |
+| `getConfig_dopoTTL_ricaricaDaDatabase` | Dopo scadenza TTL: ricarica da DB |
+| `getConfig_enteNonTrovato_restituisceVuoto` | Ente non trovato → `Optional.empty()` |
+| `getConfig_chiaveCorretta` | La chiave di cache usa il formato `codIpaEnte\|tipoOperazione` |
+| `invalidate_svuotaCache` | `invalidate()` svuota tutta la cache |
+| `size_restituisceDimensioneCorretta` | `size()` restituisce il numero di entry nella cache |
+| `caricamentoIniziale_thread_safety` | Caricamento thread-safe con `ReentrantLock` |
+| `staleWhileRevalidate_restituisceVecchioDatiDuranteRicaricamento` | Restituisce dati stale durante il refresh |
+| `ttlConfigurabile_leggeValore` | TTL letto da `middleware.cache.ente-config.ttl-seconds` |
+| `costruttore_inizializzaCorrettamente` | Inizializzazione corretta delle strutture interne |
+
+### `RoutingDecisionServiceTest` — 13 test (Fase 7)
+
+Testa il servizio di decisione del routing (il "cervello" del gateway). Organizzata in 4 nested inner class.
+
+| Nested class | # Test | Cosa verifica |
+|-------------|--------|---------------|
+| `RoutingPiattaformaUnitaria` | 3 | Routing verso PU: decisione corretta, URL backend, modalità |
+| `RoutingLegacy` | 3 | Routing verso legacy: decisione corretta, URL backend, modalità |
+| `CasiDiErrore` | 4 | Ente non censito, path non riconosciuto, ente disattivato, configurazione assente |
+| `InterazioneDipendenze` | 3 | Ordine di chiamata dei servizi, propagazione eccezioni, composizione decisione |
+
+### `SoapFaultExceptionResolverTest` — 8 test (Fase 7)
+
+Testa la mappatura delle eccezioni in SOAP Fault strutturate.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `piattaformaAuthenticationException_generaServerFault_AUTH_ERROR` | Auth exception → Server Fault `AUTH_ERROR` |
+| `piattaformaCommunicationException_generaServerFault_COMM_ERROR` | Comm exception → Server Fault `COMM_ERROR` |
+| `genericaException_generaServerFault_INTERNAL_ERROR` | Eccezione generica → Server Fault `INTERNAL_ERROR` |
+| `enteNonCensitoException_generaClientFault_ENTE_NON_AUTORIZZATO` | Ente non censito → Client Fault `ENTE_NON_AUTORIZZATO` |
+| `pathNonRiconosciutoException_generaClientFault_PATH_NON_RICONOSCIUTO` | Path non riconosciuto → Client Fault `PATH_NON_RICONOSCIUTO` |
+| `faultString_contieneMessaggioEccezione` | Il messaggio dell'eccezione appare nel faultstring |
+| `faultDetail_contieneErrorCode` | Il codice errore appare nel detail |
+| `erroreNelResolver_nonPropagaEccezione` | Se il resolver stesso fallisce, non propaga l'eccezione |
+
+### `TransactionLoggingServiceTest` — 11 test (Fase 9)
+
+Testa il servizio di log transazionale su DB. Organizzata in 5 nested inner class.
+
+| Nested class | # Test | Cosa verifica |
+|-------------|--------|---------------|
+| `LogSuccesso` | 2 | Inserimento corretto nel DB, campi mappati correttamente |
+| `LogErrore` | 3 | Errore post-routing con decision, campi errore, HTTP status null |
+| `LogErrorePreRouting` | 2 | Errore pre-routing con modalità/destinazione "SCONOSCIUTA" |
+| `Troncamento` | 2 | Messaggio errore troncato a 1000 caratteri, messaggio corto non troncato |
+| `ResilienzaDB` | 2 | Errore DB non blocca il flusso principale, warning nel log applicativo |
+
+### `EnteConfigHealthIndicatorTest` — 4 test (Fase 9)
+
+Testa l'health indicator per la configurazione degli enti.
+
+| Test | Cosa verifica |
+|------|---------------|
+| `health_conEntiConfigurati_restituisceUP` | Cache con enti → UP con dettaglio `entiConfigurati` |
+| `health_conUnEnteConfigurato_restituisceUP` | Cache con 1 ente → UP |
+| `health_conCacheVuota_restituisceDOWN` | Cache vuota → DOWN |
+| `health_conEccezione_restituisceDOWN` | Eccezione durante controllo → DOWN con dettaglio errore |
+
+### `MiddlewareMetricsServiceTest` — 12 test (Fase 9)
+
+Testa il servizio di metriche Micrometer. Organizzata in 5 nested inner class.
+
+| Nested class | # Test | Cosa verifica |
+|-------------|--------|---------------|
+| `GaugeEntiConfigurati` | 1 | Gauge collegato a `EnteConfigCacheService.size()` |
+| `ContatoreSuccesso` | 3 | Contatore incrementato con esito OK, tag corretti, parametri null gestiti |
+| `ContatoreErrore` | 3 | Contatore incrementato con esito ERRORE, tag corretti, decision null gestita |
+| `TimerDurata` | 3 | Timer registra durata, tag corretti, durata zero gestita |
+| `NomiMetriche` | 2 | Nomi metriche corretti (`middleware.richieste.totali`, `middleware.richieste.durata`) |
+
+### Riepilogo test
+
+| Classe di test | # Test | Fase |
+|---------------|--------|------|
+| `OAuthTokenServiceTest` | 9 | Fase 2 |
+| `PiattaformaUnitariaClientTest` | 7 | Fase 2 |
+| `ReconciliationEndpointTest` | 18 | Fase 2→7→9 |
+| `PathRegistryConfigTest` | 12 | Fase 5 |
+| `BackendRoutingConfigTest` | 3 | Fase 5 |
+| `ProxyForwardingClientTest` | 6 | Fase 5 |
+| `DomainModelTest` | 10 | Fase 6 |
+| `EnteConfigRowMapperTest` | 3 | Fase 6 |
+| `EnteConfigCacheServiceTest` | 11 | Fase 6 |
+| `RoutingDecisionServiceTest` | 13 | Fase 7 |
+| `SoapFaultExceptionResolverTest` | 8 | Fase 7 |
+| `TransactionLoggingServiceTest` | 11 | Fase 9 |
+| `EnteConfigHealthIndicatorTest` | 4 | Fase 9 |
+| `MiddlewareMetricsServiceTest` | 12 | Fase 9 |
+| **Totale** | **124** | **BUILD SUCCESS** |
 
 ---
 
-## 14. Come avviare il progetto
+## 16. Come avviare il progetto
 
 ### Pre-requisiti
 
@@ -894,9 +1612,9 @@ Il POM padre corporativo (`it.ariaspa:cm:1.0.0`) ha un plugin enforcer che verif
 
 ---
 
-## 15. Come testare il flusso completo
+## 17. Come testare il flusso completo
 
-### 15.1 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
+### 17.1 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
 
 Con l'applicazione avviata in profilo `dev` su `http://localhost:8080`:
 
@@ -930,11 +1648,12 @@ Importare in **Postman**: `requests/MyPay-Middleware-Dev.postman_collection.json
 Oppure chiamata diretta:
 
 ```
-POST http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati
+POST http://localhost:8080/ws/pivot/PagamentiTelematiciPagatiRiconciliati
 Content-Type: text/xml;charset=UTF-8
 ```
 
-Body:
+Oppure chiamata diretta:
+
 ```xml
 <soapenv:Envelope
     xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -998,90 +1717,54 @@ Risposta attesa: `{"status":"UP","details":{"stato":"Token OAuth2 in cache valid
 
 ---
 
-## 16. Cosa NON è ancora implementato
+## 18. Cosa NON è ancora implementato
 
-Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora.
+Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora (Fasi 1-7 e 9).
 
-| Funzionalità | Stato | Note |
-|-------------|-------|------|
-| Schema e tabelle del database PostgreSQL | Non implementato | Il DataSource e Jdbi sono configurati e funzionanti; mancano ancora le tabelle (`TRANSACTION_LOG`, `AUDIT_LOG`, ecc.) e i DAO/query Jdbi corrispondenti |
-| Logica di business (riconciliazione, tesoreria) | Non implementata | L'endpoint attuale fa solo forwarding del payload |
-| Trasformazione payload SOAP | Non implementata | Il payload viene inoltrato così com'è senza modifiche |
-| Validazione business dei dati in ingresso | Non implementata | Spring WS valida solo il namespace/localPart |
-| Endpoint SOAP aggiuntivi | Non implementati | Solo `pivotSILAutorizzaImportFlussoTesoreria` |
-| Contract-first (WSDL/XSD) | Non implementato | Approccio contract-last corrente |
-| Messaggistica asincrona (JMS/ActiveMQ) | Non implementata | `springline2-jms` commentato nel pom |
-| Test di integrazione end-to-end | Non implementati | Solo unit test con mock |
-| Multi-tenancy (più enti su stessa istanza) | Non valutata | Futura decisione architetturale |
-| Rate limiting per SIL | Non implementato | Potrebbe essere necessario con più enti |
-
----
-
-## 17. Prossimi passi — Fasi Future
-
-### Fase 2 — Persistenza Database (plumbing completato ✅)
-
-**Obiettivo originale**: Attivare la connessione al database e creare le tabelle necessarie per il middleware.
-
-**Stato**: Il **plumbing del database e' completato** (Fase 2 completata). PostgreSQL e' configurato e connesso tramite `DataSourceConfiguration.java` con pool HikariCP; l'accesso ai dati e' basato su `JdbiConfiguration.java`. Il datasource `pa` e' attivo nel profilo `dev`.
-
-**Lavoro rimanente**:
-1. Definire lo schema PostgreSQL — creare script SQL in `mypay.mypaycore-db/src/main/sql/`:
-   - Tabella `TRANSACTION_LOG` (traccia di ogni chiamata SIL → Piattaforma)
-   - Tabella `AUDIT_LOG` (eventi di sicurezza, autenticazioni)
-   - *(Opzionale)* Tabella `OAUTH_TOKEN_CACHE` per persistere il token OAuth2 tra riavvii
-2. Creare DAO/repository Jdbi nel package applicativo dedicato all'accesso dati
-3. Definire query SQL, mapper e modelli necessari per il logging transazionale e l'audit
-4. Aggiungere credenziali PostgreSQL reali nel profilo `dev` in `application-dev.properties` (attualmente con placeholder)
-
-**Decisioni da prendere**: naming convention delle tabelle, strategia di migrazione (Flyway? script manuali?), quali dati persistere.
+| Funzionalità | Stato | Fase prevista | Note |
+|-------------|-------|---------------|------|
+| Schema e tabelle del database PostgreSQL | ✅ Implementato | Fase 6 | Tabelle `mwpay_ente_config` e `mwpay_transaction_log`, DAO Jdbi, cache TTL |
+| Routing per modalità (PU vs legacy) | ✅ Implementato | Fase 7 | `RoutingDecisionService` — decide dove instradare in base a path + DB |
+| Log transazionale, audit, metriche | ✅ Implementato | Fase 9 | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
+| Logica di business (riconciliazione, tesoreria) | Non implementata | — | L'endpoint attuale fa solo forwarding del payload |
+| Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche |
+| Validazione business dei dati in ingresso | Non implementata | — | Spring WS valida solo il namespace/localPart |
+| Endpoint SOAP aggiuntivi | Non implementati | Fase 8 (bloccata) | Solo `pivotSILAutorizzaImportFlussoTesoreria` — altri da censire con i team mypay/mypivot |
+| Contract-first (WSDL/XSD) | Non implementato | — | Approccio contract-last corrente |
+| Messaggistica asincrona (JMS/ActiveMQ) | Non implementata | — | `springline2-jms` commentato nel pom |
+| Test di integrazione end-to-end | Non implementati | — | Solo unit test con mock (124 test) |
+| Multi-tenancy (più enti su stessa istanza) | Non valutata | — | Futura decisione architetturale |
+| Rate limiting per SIL | Non implementato | — | Potrebbe essere necessario con più enti |
 
 ---
 
-### Fase 3 — Logica di Business
+## 19. Prossimi passi — Fasi Future
 
-**Obiettivo**: Implementare la logica reale di riconciliazione e gestione flussi di tesoreria.
+> **Nota**: Le fasi elencate qui sono allineate con `docs/guidelines/Plan.md`, che è il
+> documento di riferimento autoritativo per il piano di implementazione.
 
-**Attività**:
-1. Analisi e mappatura delle specifiche SOAP della Piattaforma Unitaria
-2. Logica di riconciliazione pagamenti (`tipoFlusso=O`, `tipoFlusso=F`)
-3. Trasformazione e validazione dei payload SOAP
-4. Gestione degli stati di transazione
-5. Integrazione con il log transazionale (Fase 2)
+### Riepilogo fasi completate
 
-**Prerequisiti**: documentazione delle API della Piattaforma Unitaria, specifiche dei flussi di tesoreria.
+| Fase | Stato | Descrizione |
+|------|-------|-------------|
+| Fase 1 | ✅ | Fondazioni: pulizia demo, struttura middleware, OAuth2 |
+| Fase 2 | ✅ | Resilienza, gestione errori, health check, test unitari |
+| Fase 3 | ✅ | Persistenza PostgreSQL (plumbing): DataSource HikariCP + Jdbi |
+| Fase 4 | ✅ | Semplificazione configurazione: eliminazione profili, YAML→Properties |
+| Fase 5 | ✅ | Registro path-prefix, configurazione backend, `ProxyForwardingClient` |
+| Fase 6 | ✅ | Schema DB: tabelle `mwpay_ente_config` e `mwpay_transaction_log`, DAO Jdbi, cache TTL |
+| Fase 7 | ✅ | Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint |
+| Fase 9 | ✅ | Log transazionale, metriche Micrometer, health check enti configurati, 124 test |
 
----
+### Fase 8 — Endpoint SOAP Completi ⬜ (bloccata)
 
-### Fase 4 — Endpoint SOAP Aggiuntivi
+**Obiettivo**: Aggiungere tutti gli endpoint SOAP per mypay e mypivot.
 
-**Obiettivo**: Aggiungere tutti gli endpoint SOAP richiesti dai SIL.
-
-**Attività**:
-1. Definizione WSDL/XSD per tutti gli endpoint
-2. Valutazione migrazione da contract-last a contract-first
-3. Implementazione nuovi `@Endpoint` Spring WS
-4. Validazione XML Schema sulle richieste in ingresso
-
-**Decisioni da prendere**: lista completa degli endpoint, se usare WSDL forniti da pagoPA o definirli internamente.
+**Prerequisiti**: censimento endpoint dai team mypay/mypivot (TBD — in attesa di risposta).
 
 ---
 
-### Fase 6 — Messaggistica Asincrona
-
-**Obiettivo**: Gestire operazioni asincrone tramite JMS/ActiveMQ.
-
-**Attività**:
-1. Riattivare `springline2-jms` nel pom
-2. Configurare ActiveMQ (infrastruttura da definire con ARIA)
-3. Definire le operazioni da rendere asincrone (notifiche, batch processing)
-4. Implementare producer/consumer con dead letter queue
-
-**Prerequisiti**: infrastruttura ActiveMQ disponibile, definizione dei casi d'uso asincroni.
-
----
-
-## 18. Agenti OpenCode
+## 20. Agenti OpenCode
 
 Il progetto utilizza **OpenCode** come strumento di sviluppo assistito da AI. Gli agenti personalizzati sono definiti in `.opencode/agents/` e le regole globali per tutti gli agenti si trovano in `AGENTS.md` nella root del repository.
 
@@ -1089,7 +1772,10 @@ Il progetto utilizza **OpenCode** come strumento di sviluppo assistito da AI. Gl
 
 | Agente | File | Quando usarlo |
 |--------|------|---------------|
-| `@planner` | `.opencode/agents/planner.md` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche al codice |
+| `@expert` | `.opencode/agents/expert.md` | Decisioni architetturali, code review, debugging complesso |
+| `@planner` | `.opencode/agents/planner.md` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md |
+| `@tester` | `.opencode/agents/tester.md` | Scrivere test unitari Java, test integrazione, gestire Postman |
+| `@orchestrator` | `.opencode/agents/orchestrator.md` | Gestire ecosistema AI: agenti, skill, comandi |
 
 ### Come invocare un agente
 

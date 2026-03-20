@@ -1,6 +1,8 @@
 package it.ariaspa.mypay.mypaycore.api.config;
 
 //import it.ariaspa.mypay.mypaycore.api.logging.JdbiSqlLogger;
+import it.ariaspa.mypay.mypaycore.api.repository.EnteConfigRepository;
+import it.ariaspa.mypay.mypaycore.api.repository.TransactionLogRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
@@ -111,6 +113,33 @@ public class JdbiConfiguration {
     @Bean
     public JdbiPlugin sqlObjectPlugin() {
         return new SqlObjectPlugin();
+    }
+
+    // --- DAO Jdbi: registrati come bean Spring tramite onDemand() ---
+
+    /**
+     * Registra il DAO per la tabella {@code mwpay_ente_config}.
+     *
+     * <p>Il metodo {@code onDemand()} crea un proxy che apre e chiude automaticamente
+     * un handle Jdbi per ogni invocazione di metodo, integrandosi con le transazioni Spring.
+     *
+     * @param jdbi istanza Jdbi principale
+     * @return proxy DAO per la configurazione enti
+     */
+    @Bean
+    public EnteConfigRepository enteConfigRepository(@Qualifier("jdbiPa") Jdbi jdbi) {
+        return jdbi.onDemand(EnteConfigRepository.class);
+    }
+
+    /**
+     * Registra il DAO per la tabella {@code mwpay_transaction_log}.
+     *
+     * @param jdbi istanza Jdbi principale
+     * @return proxy DAO per il log transazionale
+     */
+    @Bean
+    public TransactionLogRepository transactionLogRepository(@Qualifier("jdbiPa") Jdbi jdbi) {
+        return jdbi.onDemand(TransactionLogRepository.class);
     }
 
     /**

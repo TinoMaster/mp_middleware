@@ -1,0 +1,188 @@
+package it.ariaspa.mypay.mypaycore.api.client;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import it.ariaspa.mypay.mypaycore.api.common.exception.PiattaformaCommunicationException;
+import it.ariaspa.mypay.mypaycore.api.config.BackendRoutingConfig;
+import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * Client HTTP per il forward trasparente verso i backend legacy (mypay e mypivot).
+ * <p>
+ * A differenza del {@link PiattaformaUnitariaClient}, questo client:
+ * <ul>
+ *   <li><strong>Non usa autenticazione OAuth2</strong> — le credenziali del SIL
+ *       ({@code codIpaEnte} + {@code password}) viaggiano as-is nel body SOAP</li>
+ *   <li><strong>Non trasforma il payload</strong> — il SOAP Envelope viene inoltrato cosi com'e</li>
+ *   <li>Usa un {@link RestTemplate} dedicato <strong>senza interceptor</strong></li>
+ * </ul>
+ * <p>
+ * Resilienza (Resilience4j):
+ * <ul>
+ *   <li>Circuit Breaker {@code backendLegacy}: protegge da errori continuativi verso i backend</li>
+ *   <li>Retry {@code backendLegacy}: tentativi con backoff esponenziale per errori temporanei</li>
+ * </ul>
+ * <p>
+ * L'URL di destinazione viene determinato combinando il base-url del backend
+ * (da {@link BackendRoutingConfig}) con il path della richiesta originale.
+ *
+ * @see BackendRoutingConfig
+ * @see PiattaformaUnitariaClient
+ */
+@Service
+public class ProxyForwardingClient {
+
+    private static final Logger log = LoggerFactory.getLogger(ProxyForwardingClient.class);
+
+    /**
+     * Timeout di connessione verso i backend legacy (millisecondi).
+     */
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+
+    /**
+     * Timeout di lettura verso i backend legacy (millisecondi).
+     */
+    private static final int READ_TIMEOUT_MS = 30_000;
+
+    private final BackendRoutingConfig backendRoutingConfig;
+    private RestTemplate restTemplate;
+
+    @Autowired
+    public ProxyForwardingClient(BackendRoutingConfig backendRoutingConfig) {
+        this.backendRoutingConfig = backendRoutingConfig;
+    }
+
+    /**
+     * Costruttore per testing che consente di iniettare un RestTemplate mock.
+     *
+     * @param backendRoutingConfig configurazione degli URL dei backend
+     * @param restTemplate         RestTemplate mock per i test
+     */
+    ProxyForwardingClient(BackendRoutingConfig backendRoutingConfig, RestTemplate restTemplate) {
+        this.backendRoutingConfig = backendRoutingConfig;
+        this.restTemplate = restTemplate;
+    }
+
+    /**
+     * Inizializza il RestTemplate senza interceptor OAuth2.
+     * <p>
+     * Il RestTemplate e volutamente "pulito": nessun header di autorizzazione viene
+     * aggiunto automaticamente. Le credenziali del SIL viaggiano nel body SOAP.
+     */
+    @PostConstruct
+    public void init() {
+        if (this.restTemplate == null) {
+            SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+            factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            factory.setReadTimeout(READ_TIMEOUT_MS);
+            this.restTemplate = new RestTemplate(factory);
+        }
+        log.info("ProxyForwardingClient inizializzato. connectTimeout: {}ms, readTimeout: {}ms",
+                CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
+    }
+
+    /**
+     * Inoltra una richiesta SOAP al backend legacy specificato.
+     * <p>
+     * Il metodo invia il payload SOAP al backend in modalita trasparente:
+     * nessuna autenticazione viene aggiunta, nessuna trasformazione del payload.
+     * <p>
+     * L'URL di destinazione e composto da:
+     * {@code backendBaseUrl + requestPath}
+     * <p>
+     * Esempio:
+     * <pre>
+     *   destinatario = MYPIVOT
+     *   requestPath  = /ws/pivot/PagamentiTelematiciPagatiRiconciliati
+     *   → URL = http://localhost:8081/ws/pivot/PagamentiTelematiciPagatiRiconciliati
+     * </pre>
+     *
+     * @param destinatario il backend di destinazione (MYPAY o MYPIVOT)
+     * @param requestPath  il path della richiesta originale (es. {@code /ws/pivot/...})
+     * @param soapXml      il body SOAP completo (Envelope) da inoltrare
+     * @return la risposta SOAP dal backend legacy
+     * @throws PiattaformaCommunicationException in caso di errore di comunicazione
+     */
+    @CircuitBreaker(name = "backendLegacy", fallbackMethod = "forwardFallback")
+    @Retry(name = "backendLegacy")
+    public String forwardToLegacyBackend(BackendDestinatario destinatario,
+                                         String requestPath,
+                                         String soapXml) {
+
+        String baseUrl = backendRoutingConfig.getBaseUrlFor(destinatario);
+        String url = baseUrl + requestPath;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_XML);
+
+        HttpEntity<String> request = new HttpEntity<>(soapXml, headers);
+
+        log.info("Forward trasparente verso backend legacy {} : {}", destinatario, url);
+
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+            log.info("Risposta ricevuta dal backend legacy {}. Status: {}",
+                    destinatario, response.getStatusCode());
+            log.debug("Corpo risposta dal backend legacy: {}", response.getBody());
+
+            return response.getBody();
+
+        } catch (HttpClientErrorException e) {
+            log.error("Errore HTTP dal backend legacy {} : {} - {}",
+                    destinatario, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new PiattaformaCommunicationException(
+                    "Errore HTTP dal backend legacy " + destinatario,
+                    e.getStatusCode().value(), e);
+
+        } catch (ResourceAccessException e) {
+            log.error("Timeout o errore di rete verso il backend legacy {} : {}",
+                    destinatario, e.getMessage());
+            throw new PiattaformaCommunicationException(
+                    "Timeout o errore di rete verso il backend legacy " + destinatario, e);
+
+        } catch (RestClientException e) {
+            log.error("Errore nella comunicazione con il backend legacy {} : {}",
+                    destinatario, e.getMessage(), e);
+            throw new PiattaformaCommunicationException(
+                    "Errore nella comunicazione con il backend legacy " + destinatario, e);
+        }
+    }
+
+    /**
+     * Fallback invocato quando il circuit breaker per i backend legacy e aperto.
+     *
+     * @param destinatario il backend di destinazione originale
+     * @param requestPath  il path originale della richiesta
+     * @param soapXml      il body SOAP originale
+     * @param ex           l'eccezione che ha causato l'apertura del circuit breaker
+     * @return mai — lancia sempre {@link PiattaformaCommunicationException}
+     */
+    public String forwardFallback(BackendDestinatario destinatario,
+                                  String requestPath,
+                                  String soapXml,
+                                  Throwable ex) {
+        log.error("Circuit breaker aperto per il backend legacy {}. "
+                + "Richiesta a {} rifiutata. Causa: {}", destinatario, requestPath, ex.getMessage());
+        throw new PiattaformaCommunicationException(
+                "Backend legacy " + destinatario + " temporaneamente non raggiungibile "
+                + "(circuit breaker aperto). Riprovare piu tardi.",
+                ex instanceof PiattaformaCommunicationException
+                        ? ((PiattaformaCommunicationException) ex).getHttpStatus()
+                        : 503);
+    }
+}
