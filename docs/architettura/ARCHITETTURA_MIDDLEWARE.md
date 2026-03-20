@@ -1,8 +1,8 @@
 # Documento di Architettura - MyPay Middleware (mypay.mypaycore)
 
-**Versione:** 1.1  
-**Data:** 18 Marzo 2026  
-**Stato:** Fase 1 - Fondamenta completate + Test end-to-end con PU UAT reale  
+**Versione:** 1.2  
+**Data:** 20 Marzo 2026  
+**Stato:** Fondamenta completate + logging custom, persistenza plumbing, resilienza e test unitari  
 
 ---
 
@@ -156,7 +156,7 @@ OAuthTokenService                    Piattaforma Unitaria
 | **SOAP Server** | Spring Web Services | (gestito da spring-boot-starter-web-services) |
 | **SOAP Client** | SpringLine2 WS | 2027.01.01 |
 | **XML Binding** | Jakarta XML Bind (JAXB) | (gestito da BOM) |
-| **Logging** | SLF4J + SpringLine2 MON/MON-APP | Integrato |
+| **Logging** | SLF4J + Logback + marker custom + SpringLine2 MON/MON-APP | Integrato |
 | **Sicurezza** | SpringLine2 Security (JWT/Propagator) | Integrato |
 | **API Docs** | SpringLine2 OpenAPI (Swagger) | Integrato |
 
@@ -191,7 +191,7 @@ mypay.mypaycore/                              (Parent POM - packaging: pom)
 │
 ├── mypay.mypaycore-properties/               (Configurazione per il deploy)
 │   ├── pom.xml                               (Packaging: zip)
-│   └── src/main/resources/                   (YAML, bootstrap, script shell)
+│   └── src/main/resources/                   (properties, bootstrap, logback, script shell)
 │
 ├── mypay.mypaycore-db/                       (Script database)
 │   ├── pom.xml                               (Packaging: zip)
@@ -199,10 +199,6 @@ mypay.mypaycore/                              (Parent POM - packaging: pom)
 │
 ├── mypay.mypaycore-release/                  (Aggregatore per il rilascio)
 │   └── pom.xml                               (Assembla jar + properties + db)
-│
-├── mypay.mypaycore-local-properties/         (Configurazione sviluppo locale)
-│   ├── config/                               (YAML locali, properties di default)
-│   └── certs/                                (Certificati SSL per sviluppo)
 │
 └── docs/                                     (Documentazione)
     ├── architettura/                         (Questo documento)
@@ -221,6 +217,10 @@ it.ariaspa.mypay.mypaycore.api/
 │   ├── PiattaformaUnitariaConfig.java       Configurazione URL e credenziali OAuth2
 │   └── SoapWebServiceConfig.java            Registrazione MessageDispatcherServlet
 │
+├── logging/
+│   ├── JdbiSqlLogger.java                   Logger SQL custom per Jdbi
+│   └── LogMarker.java                       Marker SLF4J centralizzati
+│
 ├── auth/
 │   ├── dto/
 │   │   └── OAuthTokenResponse.java          DTO risposta token OAuth2
@@ -233,6 +233,11 @@ it.ariaspa.mypay.mypaycore.api/
 │
 ├── client/
 │   └── PiattaformaUnitariaClient.java       Client HTTP verso Piattaforma Unitaria
+│
+├── util/
+│   ├── Constants.java                       Contenitore centralizzato delle costanti
+│   ├── LogHelper.java                       Utility per firme metodo leggibili nei log
+│   └── Utilities.java                       Helper tecnici riusabili
 │
 └── common/
     └── exception/
@@ -247,7 +252,7 @@ it.ariaspa.mypay.mypaycore.api/
 
 **`PiattaformaUnitariaConfig`** (`config/PiattaformaUnitariaConfig.java`)
 
-Classe `@Configuration` + `@ConfigurationProperties(prefix = "piattaforma-unitaria")` che mappa automaticamente le proprieta YAML in un oggetto Java. Contiene:
+Classe `@Configuration` + `@ConfigurationProperties(prefix = "piattaforma-unitaria")` che mappa automaticamente le proprieta in formato `.properties` in un oggetto Java. Contiene:
 
 - `baseUrl` - URL base della Piattaforma Unitaria
 - `auth.tokenUrl` - Endpoint OAuth2 per il login
@@ -257,9 +262,9 @@ Classe `@Configuration` + `@ConfigurationProperties(prefix = "piattaforma-unitar
 - `auth.scope` - Scope OAuth2 (default: `openid`)
 
 Le credenziali sono configurate per supportare variabili d'ambiente:
-```yaml
-client-id: ${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
-client-secret: ${PIATTAFORMA_CLIENT_SECRET:xxxxx}
+```properties
+piattaforma-unitaria.auth.client-id=${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
+piattaforma-unitaria.auth.client-secret=${PIATTAFORMA_CLIENT_SECRET:xxxxx}
 ```
 
 **`SoapWebServiceConfig`** (`config/SoapWebServiceConfig.java`)
@@ -318,16 +323,16 @@ Eccezione runtime dedicata ai fallimenti di autenticazione OAuth2, con supporto 
 
 ### 6.6 Sicurezza
 
-La catena di sicurezza SpringLine2 e configurata nel `application.yml` base con JWT abilitato sugli endpoint SOAP. Tuttavia, nel profilo **dev** (`application-dev.yml`), la sicurezza JWT e **disabilitata** perche i SIL non inviano token JWT — si autenticano tramite `codIpaEnte` + `password` nel messaggio SOAP:
+La catena di sicurezza SpringLine2 e configurata nel file base `application.properties` con JWT abilitato sugli endpoint SOAP. Tuttavia, nel profilo **dev** (`application-dev.properties`), la sicurezza JWT e **disabilitata** perche i SIL non inviano token JWT — si autenticano tramite `codIpaEnte` + `password` nel messaggio SOAP:
 
-**Configurazione base (application.yml):**
+**Configurazione base (`application.properties`):**
 
 | Path Pattern | Tipo di Autenticazione | Descrizione |
 |-------------|----------------------|-------------|
 | `/favicon.ico`, `/swagger-ui/**`, `/v3/api-docs/**` | Anonymous | Accesso pubblico |
 | `/pu/sil/soap/**` | JWT + Propagator | Configurazione predefinita (per ambienti con gateway) |
 
-**Configurazione dev (application-dev.yml) — override:**
+**Configurazione dev (`application-dev.properties`) — override:**
 
 | Path Pattern | Tipo di Autenticazione | Descrizione |
 |-------------|----------------------|-------------|
@@ -337,12 +342,33 @@ La catena di sicurezza SpringLine2 e configurata nel `application.yml` base con 
 
 ### 6.7 Logging
 
-Il sistema di logging MON/MON-APP di SpringLine2 e attivo per:
+Il modello di logging del middleware combina il supporto di SpringLine2 con una configurazione Logback custom e marker SLF4J centralizzati.
 
-- Richieste HTTP in ingresso (`spl.http.logging.mon.enabled: true`)
-- Richieste HTTP in ingresso - livello applicativo (`spl.http.logging.app.enabled: true`)
-- Chiamate REST client in uscita (`spl.client-rest.logging.mon.enabled: true`)
-- Chiamate REST client in uscita - livello applicativo (`spl.client-rest.logging.app.enabled: true`)
+**Componenti principali**:
+
+- `LogMarker` centralizza i marker semantici del progetto (`MONITORING`, `REST`, `SOAP_SERVER`, `SOAP_CLIENT`, `METHOD`, `DB_STATEMENT`, `DB_CONNECTION_POOL`)
+- `LogHelper` converte oggetti `Method` in firme leggibili per i log tecnici e SQL
+- `JdbiSqlLogger` traccia query, tempo di esecuzione, binding, stato read-only e query lente del layer Jdbi
+- `logback-spring.xml` nel modulo `mypay.mypaycore-properties` separa i flussi di log su file dedicati
+
+**File di log previsti**:
+
+| File | Contenuto |
+|------|-----------|
+| `backend.log` | Log tecnico generale del backend |
+| `mon.log` | Monitoraggio sintetico |
+| `app.log` | Log applicativi dedicati |
+| `audit.log` | Eventi di audit |
+| `filter.log` | Request tracing, filtri e tracing SOAP/client |
+
+**Integrazione SpringLine2**:
+
+- Richieste HTTP in ingresso (`spl.http.logging.mon.enabled=true`)
+- Richieste HTTP in ingresso - livello applicativo (`spl.http.logging.app.enabled=true`)
+- Chiamate REST client in uscita (`spl.client-rest.logging.mon.enabled=true`)
+- Chiamate REST client in uscita - livello applicativo (`spl.client-rest.logging.app.enabled=true`)
+
+Questo approccio permette di distinguere meglio i log infrastrutturali, applicativi, di monitoraggio e di audit senza disperdere stringhe o convenzioni direttamente nel codice.
 
 ---
 
@@ -363,37 +389,44 @@ spring.datasource.pa.hikari.maximum-pool-size=5
 ```
 
 **Piattaforma Unitaria** (ambiente UAT):
-```yaml
-piattaforma-unitaria:
-  base-url: https://api.uat.p4pa.pagopa.it
-  auth:
-    token-url: ${piattaforma-unitaria.base-url}/pu/auth/oauth/token
-    client-id: ${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
-    client-secret: ${PIATTAFORMA_CLIENT_SECRET:xxxxx}
-    grant-type: client_credentials
-    scope: openid
+```properties
+piattaforma-unitaria.base-url=https://api.uat.p4pa.pagopa.it
+piattaforma-unitaria.auth.token-url=${piattaforma-unitaria.base-url}/pu/auth/oauth/token
+piattaforma-unitaria.auth.client-id=${PIATTAFORMA_CLIENT_ID:SELC_99999000013SIL_RegLomb2}
+piattaforma-unitaria.auth.client-secret=${PIATTAFORMA_CLIENT_SECRET:xxxxx}
+piattaforma-unitaria.auth.grant-type=client_credentials
+piattaforma-unitaria.auth.scope=openid
 ```
 
 **SpringLine2** (sicurezza, logging):
-```yaml
-spl:
-  security:
-    authentication:
-      anonymous:
-        uri-matchers: /favicon.ico,/swagger-ui/**,/v3/api-docs/**
-      jwt:
-        uri-matchers: /pu/sil/soap/**
-      propagator:
-        uri-matchers: /pu/sil/soap/**
+```properties
+spl.security.authentication.anonymous.uri-matchers=/favicon.ico,/swagger-ui/**,/v3/api-docs/**
+spl.security.authentication.jwt.uri-matchers=/pu/sil/soap/**
+spl.security.authentication.propagator.uri-matchers=/pu/sil/soap/**
+spl.http.logging.mon.enabled=true
+spl.http.logging.app.enabled=true
+spl.client-rest.logging.mon.enabled=true
+spl.client-rest.logging.app.enabled=true
 ```
+
+**Logback applicativo** (`mypay.mypaycore-properties/src/main/resources/logback-spring.xml`):
+```properties
+logging.file.dir=<directory-log>
+```
+
+La directory definita da `logging.file.dir` viene usata come radice per i file `backend.log`, `mon.log`, `app.log`, `audit.log` e `filter.log`.
 
 ### 7.2 Configurazione Sviluppo Locale
 
-La cartella `mypay.mypaycore-local-properties/` contiene:
+Per lo sviluppo locale il progetto usa il profilo `dev` del modulo `mypay.mypaycore-springboot` e il modulo `mypay.mypaycore-properties` come template di deploy.
 
-- `config/application.yml` - Configurazione locale con HTTPS (porta 8443, TLSv1.2)
-- `config/bootstrap.yml` - Nome applicazione e configurazione keystore
-- `certs/` - Certificati SSL per sviluppo locale (lispa.local.p12, keystore.jks)
+I file rilevanti sono:
+
+- `mypay.mypaycore-springboot/src/main/resources/config/application.properties`
+- `mypay.mypaycore-springboot/src/main/resources/config/application-dev.properties`
+- `mypay.mypaycore-springboot/src/main/resources/config/bootstrap.properties`
+- `mypay.mypaycore-properties/src/main/resources/application.properties`
+- `mypay.mypaycore-properties/src/main/resources/logback-spring.xml`
 
 ### 7.3 Variabili d'Ambiente
 
@@ -468,7 +501,7 @@ La struttura multi-modulo segue lo standard ARIA:
 - **properties**: Configurazione per il deploy (zip)
 - **db**: Script database (zip)
 - **release**: Aggregatore per il rilascio
-- **local-properties**: Solo per sviluppo locale (non incluso nel rilascio)
+- **docs**: Documentazione tecnica, architetturale e operativa del progetto
 
 ---
 

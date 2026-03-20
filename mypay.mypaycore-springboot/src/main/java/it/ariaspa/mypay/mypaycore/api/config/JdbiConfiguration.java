@@ -1,6 +1,6 @@
 package it.ariaspa.mypay.mypaycore.api.config;
 
-//import it.ariaspa.mypay.mypaycore.api.logging.JdbiSqlLogger;
+import it.ariaspa.mypay.mypaycore.api.logging.JdbiSqlLogger;
 import lombok.extern.slf4j.Slf4j;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
@@ -41,8 +41,8 @@ public class JdbiConfiguration {
     @Value("${mypay4.statements.timeout.seconds:-1}")
     private int globalStatementTimeout;
 
-   // @Autowired
-  //  JdbiSqlLogger jdbiSqlLogger;
+    @Autowired
+    JdbiSqlLogger jdbiSqlLogger;
 
     /**
      * Espone l'istanza Jdbi primaria associata al datasource PA.
@@ -86,9 +86,9 @@ public class JdbiConfiguration {
             log.info("not setting default query timeout for ds {} (value {})", dsStringFinal, globalStatementTimeout);
         }
         if(!"false".equalsIgnoreCase(sqlLogginEnabled)) {
-         //   jdbiSqlLogger.setBehaviour(sqlLogginEnabled);
-        //    jdbiSqlLogger.setSlowQueryTresholdMs(sqlLogginSlowQueryTresholdMs);
-        //    jdbi.setSqlLogger(jdbiSqlLogger);
+            jdbiSqlLogger.setBehaviour(sqlLogginEnabled);
+            jdbiSqlLogger.setSlowQueryTresholdMs(sqlLogginSlowQueryTresholdMs);
+            jdbi.setSqlLogger(jdbiSqlLogger);
         }
 
         log.debug("Datasource {} - Installing jdbi plugins... ({} found): {}"

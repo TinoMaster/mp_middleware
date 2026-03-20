@@ -1,8 +1,8 @@
 # DOCUMENTAZIONE_PRIMA_FASE
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 1.5.0  
-**Data**: 19 Marzo 2026  
+**Versione**: 1.5.1  
+**Data**: 20 Marzo 2026  
 **Stato**: Prima fase completata — Fondazioni operative + Test end-to-end con PU UAT reale
 
 ---
@@ -148,7 +148,9 @@ mypay.mypaycore-springboot/
     │   │   ├── common/
     │   │   ├── config/
     │   │   ├── health/
-    │   │   └── soap/
+    │   │   ├── logging/
+    │   │   ├── soap/
+    │   │   └── util/
     │   └── resources/config/
      │       ├── application.properties        ← configurazione base (comune a tutti i profili)
      │       ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
@@ -176,10 +178,33 @@ mypay.mypaycore-properties/
 └── src/main/resources/
     ├── application.properties   ← template di configurazione per il deployment (DataSource, SSL, SpringLine2)
     ├── bootstrap.properties     ← versione applicazione e configurazioni di bootstrap
+    ├── logback-spring.xml       ← configurazione Logback per console e file di log
     └── startup.sh               ← script di avvio con --spring.profiles.active=dev
 ```
 
 Il file `application.properties` in questo modulo è il **template di deployment**: contiene placeholder (`<INSERIRE ...>`) per tutte le proprietà sensibili (credenziali DB, password SSL, segreto JWT). Va completato prima del deploy su ogni ambiente.
+
+Il file `logback-spring.xml` definisce invece la strategia di scrittura dei log su console e su file, separando i flussi tecnici generali da quelli di monitoraggio, audit e tracing.
+
+### `logback-spring.xml`
+
+Il file `mypay.mypaycore-properties/src/main/resources/logback-spring.xml` configura gli appender Logback del progetto e usa la proprieta' `logging.file.dir` come directory base per i file prodotti.
+
+**File di log configurati**:
+
+| File | Contenuto previsto |
+|------|--------------------|
+| `backend.log` | Log tecnici generali applicativi e di infrastruttura |
+| `mon.log` | Log di monitoraggio in formato compatto |
+| `app.log` | Log applicativi dedicati in formato compatto |
+| `audit.log` | Eventi di audit in formato solo messaggio |
+| `filter.log` | Trace di filtri web e message tracing SOAP/client |
+
+**Dettagli operativi**:
+- usa `RollingFileAppender` con rotazione giornaliera per tutti i file principali
+- mantiene separati i flussi per semplificare troubleshooting, audit e monitoraggio operativo
+- lascia il root logger attivo su console e su `backend.log`
+- consente di instradare logger specifici su file dedicati in base al package o al ruolo funzionale
 
 ---
 
@@ -221,7 +246,40 @@ api/
 ├── health/                                  ← Health check Actuator
 │   ├── OAuthTokenHealthIndicator.java
 │   └── PiattaformaUnitariaHealthIndicator.java
+│
+├── logging/                                 ← Marker e logging infrastrutturale
+│   ├── JdbiSqlLogger.java
+│   └── LogMarker.java
+│
+└── util/                                    ← Utility tecniche condivise
+    ├── Constants.java
+    ├── LogHelper.java
+    └── Utilities.java
 ```
+
+### Package `logging`
+
+Contiene i componenti trasversali usati per classificare e scrivere i log tecnici del middleware.
+
+| Classe | Scopo |
+|--------|-------|
+| `LogMarker.java` | Enum centralizzato dei marker SLF4J usati per categorizzare i flussi di log (`MONITORING`, `REST`, `SOAP_SERVER`, `SOAP_CLIENT`, `METHOD`, `DB_STATEMENT`, `DB_CONNECTION_POOL`) |
+| `JdbiSqlLogger.java` | Logger Jdbi personalizzato che traccia query SQL, tempo di esecuzione, stato read-only della transazione e query lente |
+
+### Package `util`
+
+Contiene componenti riusabili e trasversali, da usare per evitare duplicazione di costanti e helper sparsi nel codice.
+
+| Classe | Scopo |
+|--------|-------|
+| `Constants.java` | Contenitore centralizzato delle costanti applicative condivise (namespace, header, codici, chiavi, path, valori ricorrenti) |
+| `LogHelper.java` | Utility reflection-based che converte `Method` in firme leggibili per i log, con diversi livelli di dettaglio |
+| `Utilities.java` | Contenitore di metodi helper stateless e riusabili, richiamabili da piu' componenti applicativi |
+
+**Convenzioni di utilizzo**:
+- `Constants` deve contenere solo costanti condivise e semanticamente stabili; evitare di inserirvi valori temporanei o specifici di una singola classe
+- `Utilities` deve ospitare solo logica tecnica riusabile e priva di stato; non deve diventare un contenitore di business logic eterogenea
+- quando una costante o una utility e' usata da un solo componente, e' preferibile mantenerla vicino alla classe che la usa
 
 ---
 
@@ -584,6 +642,8 @@ Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il c
 
 Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
+Accanto agli endpoint Actuator, il progetto dispone di una infrastruttura di logging custom che si affianca al logging standard di Spring Boot e ai meccanismi di monitoraggio messi a disposizione da SpringLine2.
+
 ### URL degli endpoint Actuator
 
 | Endpoint | URL | Descrizione |
@@ -615,6 +675,72 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 - Timeout ridotti: connect 3s, read 5s
 - `UP`: la piattaforma risponde
 - `DOWN`: timeout, errore di rete, o risposta di errore
+
+### Logging applicativo e tecnico
+
+La strategia di logging del middleware e' divisa in due livelli complementari:
+
+- **logging framework/runtime**: console, root logger, package logger e file gestiti da `logback-spring.xml`
+- **logging semantico applicativo**: marker SLF4J centralizzati in `LogMarker.java`, riusati dai componenti per classificare i messaggi
+
+### `LogMarker.java`
+
+`LogMarker` centralizza i marker SLF4J del progetto in un unico enum, evitando stringhe duplicate o incoerenti nei logger applicativi.
+
+| Marker enum | Nome marker | Uso previsto |
+|-------------|-------------|-------------|
+| `MONITORING` | `MON_GEN` | Eventi di monitoraggio generale |
+| `REST` | `MON_REST` | Chiamate REST e integrazioni HTTP |
+| `SOAP_SERVER` | `MON_WSS` | Tracciamento richieste SOAP ricevute dal middleware |
+| `SOAP_CLIENT` | `MON_WSC` | Chiamate SOAP in uscita verso sistemi esterni |
+| `METHOD` | `MON_METH` | Tracing di esecuzione di metodi applicativi |
+| `DB_STATEMENT` | `MON_DBS` | Query SQL e tempi di esecuzione |
+| `DB_CONNECTION_POOL` | `MON_CONN` | Eventi legati al pool di connessioni |
+
+### `LogHelper.java`
+
+`LogHelper` e' una utility tecnica che trasforma un oggetto `java.lang.reflect.Method` in una stringa leggibile per i log.
+
+**Perche' serve**:
+- rende i log piu' comprensibili quando il metodo e' ottenuto via reflection
+- permette di scegliere un formato breve o dettagliato in base al contesto
+- viene usata in particolare nel logging SQL Jdbi per indicare quale metodo applicativo ha originato una query
+
+**Formati disponibili**:
+- `methodToShortString(...)`: nome metodo con `(..)` se esistono parametri
+- `methodToString(...)`: nome metodo con tipi dei parametri
+- `methodToLongString(...)`: modificatore, tipo di ritorno, nome metodo e parametri
+- `methodToFullString(...)`: rappresentazione completa con nomi fully-qualified dei tipi e della classe dichiarativa
+
+### Logging SQL con `JdbiSqlLogger`
+
+Il layer Jdbi e' predisposto per usare `JdbiSqlLogger` come logger SQL personalizzato.
+
+**Informazioni tracciate**:
+- metodo Java sorgente della query
+- tempo di esecuzione in millisecondi
+- SQL renderizzato
+- binding dei parametri quando presenti
+- stato read-only della transazione corrente
+- evidenziazione delle query lente quando supera la soglia configurata
+
+In caso di eccezione SQL, il logger emette anche lo stack trace associato alla query fallita.
+
+### File di log generati
+
+Il file `mypay.mypaycore-properties/src/main/resources/logback-spring.xml` configura i seguenti output:
+
+| File | Ruolo |
+|------|-------|
+| `backend.log` | Log tecnico generale del backend |
+| `mon.log` | Tracciamento sintetico di monitoraggio |
+| `app.log` | Flusso applicativo dedicato |
+| `audit.log` | Eventi di audit |
+| `filter.log` | Request/response tracing e filtri |
+
+### Nota di allineamento configurativo
+
+La documentazione assume che ogni logger dedicato venga instradato verso il file semanticamente coerente con il proprio scopo. Se in futuro la configurazione `logback-spring.xml` verra' modificata, la guida dovra' essere riallineata per mantenere coerenza tra marker, logger e file di destinazione.
 
 ---
 

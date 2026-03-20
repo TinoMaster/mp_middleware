@@ -14,6 +14,7 @@ Il progetto è stato generato dall'archetype **SpringLine2** (ARIA S.p.A.) con c
 | Fase 5 | ✅ Completata | Resilienza, gestione errori, health check, profili multi-ambiente, test unitari |
 | Fase 2 | ✅ Completata (plumbing) | Persistenza su database PostgreSQL — DataSource, HikariCP e Jdbi configurati; schema e query applicative ancora da definire |
 | Semplificazione Configurazione | ✅ Completata | Eliminazione profili uat/prod, conversione configurazione da YAML a Properties, solo profilo `dev` attivo |
+| Logging e Utility Comuni | ✅ Completato | Introdotti marker centralizzati, helper per firme metodo, `logback-spring.xml` e contenitori condivisi `Constants`/`Utilities` |
 | Fase 3 | ⬜ Da fare | Logica di business (riconciliazione, flussi tesoreria) |
 | Fase 4 | ⬜ Da fare | Endpoint SOAP aggiuntivi, contract-first con WSDL/XSD |
 | Fase 6 | ⬜ Da fare | Messaggistica asincrona (JMS/ActiveMQ) |
@@ -224,6 +225,12 @@ Il file `mypay.mypaycore-properties/src/main/resources/startup.sh` è stato aggi
 
 #### Aggiornamento AGENTS.md
 La tabella dei profili in `AGENTS.md` è stata aggiornata per riflettere che attualmente esiste **un solo profilo attivo** (`dev`); i profili `uat` e `prod` sono da creare.
+
+#### Infrastruttura logging e utility comuni
+- Aggiunta la classe `LogMarker.java` per centralizzare i marker SLF4J del progetto
+- Aggiunta la classe `LogHelper.java` per formattare firme metodo leggibili nei log tecnici
+- Inserito `logback-spring.xml` nel modulo `mypay.mypaycore-properties` per la scrittura dei log su file separati (`backend`, `mon`, `app`, `audit`, `filter`)
+- Predisposte le classi `Constants.java` e `Utilities.java` come contenitori condivisi rispettivamente per costanti e helper riusabili
 
 ---
 
