@@ -36,12 +36,13 @@ mypay.mypaycore/                         ← root, parent POM
 │       │   ├── client/
 │       │   ├── soap/endpoint/
 │       │   ├── common/exception/
-│       │   └── health/
+│       │   ├── health/
+│       │   ├── logging/
+│       │   └── util/
 │       └── test/java/...
 ├── mypay.mypaycore-properties/          ← application*.properties per il deploy
 ├── mypay.mypaycore-db/                  ← script SQL
 ├── docs/                                ← tutta la documentazione (in italiano)
-│   ├── architettura/ARCHITETTURA_MIDDLEWARE.md
 │   ├── guidelines/DOCUMENTAZIONE_PRIMA_FASE.md   ← guida tecnica principale
 │   ├── guidelines/Plan.md               ← stato fasi e piano attività
 │   ├── procedures/GUIDA_TEST_POSTMAN_END_TO_END.md
@@ -68,9 +69,8 @@ mypay.mypaycore/                         ← root, parent POM
    il parent POM corporate `it.ariaspa:cm:1.0.0`
 2. **Rispettare il prefisso datasource** `spring.datasource.pa.*` (non `spring.datasource.*`)
 3. **Non creare il profilo `local`** — è stato rimosso intenzionalmente; l'unico profilo attivo è `dev`
-4. **Non rigenerare `shutdown.pid`** — rimosso intenzionalmente
-5. **Non usare `WsConfigurerAdapter`** (deprecato) — usare l'interfaccia `WsConfigurer`
-6. **Sicurezza XXE**: qualsiasi parsing XML deve usare `DocumentBuilderFactory` con DTD e
+4. **Non usare `WsConfigurerAdapter`** (deprecato) — usare l'interfaccia `WsConfigurer`
+5. **Sicurezza XXE**: qualsiasi parsing XML deve usare `DocumentBuilderFactory` con DTD e
    external entities disabilitati
 
 ### Compilazione (Windows/WSL)
@@ -181,4 +181,3 @@ I profili `uat` e `prod` verranno creati in futuro quando necessario.
 | DataSource | Prefisso `spring.datasource.pa.*`, configurato manualmente in `DataSourceConfiguration.java` e integrato con `JdbiConfiguration.java` |
 | Spring WS | Libreria `springline2-ws` è client SOAP, non server — server gestito da `spring-boot-starter-web-services` |
 | Profilo `local` | Rimosso — non ricreare |
-| `shutdown.pid` | Rimosso — non ricreare logica `ApplicationPidFileWriter` |

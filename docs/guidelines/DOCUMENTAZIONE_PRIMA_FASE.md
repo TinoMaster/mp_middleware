@@ -158,7 +158,8 @@ mypay.mypaycore-springboot/
     │   │   ├── metrics/
     │   │   ├── repository/
     │   │   ├── routing/
-    │   │   └── soap/
+    │   │   ├── soap/
+    │   │   └── util/
     │   └── resources/config/
     │       ├── application.properties        ← configurazione base (comune a tutti i profili)
     │       ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
@@ -209,10 +210,33 @@ mypay.mypaycore-properties/
 └── src/main/resources/
     ├── application.properties   ← template di configurazione per il deployment (DataSource, SSL, SpringLine2)
     ├── bootstrap.properties     ← versione applicazione e configurazioni di bootstrap
+    ├── logback-spring.xml       ← configurazione Logback per console e file di log
     └── startup.sh               ← script di avvio con --spring.profiles.active=dev
 ```
 
 Il file `application.properties` in questo modulo è il **template di deployment**: contiene placeholder (`<INSERIRE ...>`) per tutte le proprietà sensibili (credenziali DB, password SSL, segreto JWT). Va completato prima del deploy su ogni ambiente.
+
+Il file `logback-spring.xml` definisce la strategia di scrittura dei log su console e su file, separando i flussi tecnici generali da quelli di monitoraggio, audit e tracing.
+
+### `logback-spring.xml`
+
+Il file `mypay.mypaycore-properties/src/main/resources/logback-spring.xml` configura gli appender Logback del progetto e usa la proprietà `logging.file.dir` come directory base per i file prodotti.
+
+**File di log configurati**:
+
+| File | Contenuto previsto |
+|------|--------------------|
+| `backend.log` | Log tecnici generali applicativi e di infrastruttura |
+| `mon.log` | Log di monitoraggio in formato compatto |
+| `app.log` | Log applicativi dedicati in formato compatto |
+| `audit.log` | Eventi di audit in formato solo messaggio |
+| `filter.log` | Trace di filtri web e message tracing SOAP/client |
+
+**Dettagli operativi**:
+- usa `RollingFileAppender` con rotazione giornaliera per tutti i file principali
+- mantiene separati i flussi per semplificare troubleshooting, audit e monitoraggio operativo
+- lascia il root logger attivo su console e su `backend.log`
+- consente di instradare logger specifici su file dedicati in base al package o al ruolo funzionale
 
 ---
 
@@ -265,8 +289,10 @@ api/
 │   ├── TransactionLogRepository.java        (DAO Jdbi — SqlObject)
 │   └── TransactionLogRowMapper.java
 │
-├── logging/                                 ← Log transazionale (Fase 9)
-│   └── TransactionLoggingService.java       (log su DB con resilienza — mai blocca il SIL)
+├── logging/                                 ← Log transazionale e marker (Fase 9)
+│   ├── TransactionLoggingService.java       (log su DB con resilienza — mai blocca il SIL)
+│   ├── JdbiSqlLogger.java                   (logger SQL custom per Jdbi)
+│   └── LogMarker.java                       (marker SLF4J centralizzati)
 │
 ├── metrics/                                 ← Metriche Micrometer (Fase 9)
 │   └── MiddlewareMetricsService.java        (Counter, Timer, Gauge per Actuator)
@@ -282,6 +308,11 @@ api/
 │   ├── OAuthTokenHealthIndicator.java
 │   ├── PiattaformaUnitariaHealthIndicator.java
 │   └── EnteConfigHealthIndicator.java       (Fase 9 — verifica enti configurati)
+│
+└── util/                                    ← Utility tecniche condivise
+    ├── Constants.java                       (contenitore centralizzato delle costanti)
+    ├── LogHelper.java                       (utility per firme metodo leggibili nei log)
+    └── Utilities.java                       (helper tecnici riusabili)
 ```
 
 ---
@@ -1141,6 +1172,87 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 | `registraErrore(codIpaEnte, tipoOperazione, decision, durataMs)` | Incrementa contatore con `esito=ERRORE` e registra durata nel timer |
 
 **Robustezza**: I parametri `null` vengono sostituiti con `"sconosciuto"`. Le eccezioni durante la registrazione delle metriche vengono catturate silenziosamente per non bloccare il flusso principale.
+
+---
+
+### Logging applicativo e tecnico
+
+Accanto agli endpoint Actuator, il progetto dispone di una infrastruttura di logging custom che si affianca al logging standard di Spring Boot e ai meccanismi di monitoraggio messi a disposizione da SpringLine2.
+
+La strategia di logging del middleware è divisa in due livelli complementari:
+
+- **logging framework/runtime**: console, root logger, package logger e file gestiti da `logback-spring.xml`
+- **logging semantico applicativo**: marker SLF4J centralizzati in `LogMarker.java`, riusati dai componenti per classificare i messaggi
+
+#### `LogMarker.java`
+
+`LogMarker` centralizza i marker SLF4J del progetto in un unico enum, evitando stringhe duplicate o incoerenti nei logger applicativi.
+
+| Marker enum | Nome marker | Uso previsto |
+|-------------|-------------|-------------|
+| `MONITORING` | `MON_GEN` | Eventi di monitoraggio generale |
+| `REST` | `MON_REST` | Chiamate REST e integrazioni HTTP |
+| `SOAP_SERVER` | `MON_WSS` | Tracciamento richieste SOAP ricevute dal middleware |
+| `SOAP_CLIENT` | `MON_WSC` | Chiamate SOAP in uscita verso sistemi esterni |
+| `METHOD` | `MON_METH` | Tracing di esecuzione di metodi applicativi |
+| `DB_STATEMENT` | `MON_DBS` | Query SQL e tempi di esecuzione |
+| `DB_CONNECTION_POOL` | `MON_CONN` | Eventi legati al pool di connessioni |
+
+#### `LogHelper.java`
+
+`LogHelper` è una utility tecnica che trasforma un oggetto `java.lang.reflect.Method` in una stringa leggibile per i log.
+
+**Perché serve**:
+- rende i log più comprensibili quando il metodo è ottenuto via reflection
+- permette di scegliere un formato breve o dettagliato in base al contesto
+- viene usata in particolare nel logging SQL Jdbi per indicare quale metodo applicativo ha originato una query
+
+**Formati disponibili**:
+- `methodToShortString(...)`: nome metodo con `(..)` se esistono parametri
+- `methodToString(...)`: nome metodo con tipi dei parametri
+- `methodToLongString(...)`: modificatore, tipo di ritorno, nome metodo e parametri
+- `methodToFullString(...)`: rappresentazione completa con nomi fully-qualified dei tipi e della classe dichiarativa
+
+#### Logging SQL con `JdbiSqlLogger`
+
+Il layer Jdbi è predisposto per usare `JdbiSqlLogger` come logger SQL personalizzato.
+
+**Informazioni tracciate**:
+- metodo Java sorgente della query
+- tempo di esecuzione in millisecondi
+- SQL renderizzato
+- binding dei parametri quando presenti
+- stato read-only della transazione corrente
+- evidenziazione delle query lente quando supera la soglia configurata
+
+In caso di eccezione SQL, il logger emette anche lo stack trace associato alla query fallita.
+
+#### File di log generati
+
+Il file `mypay.mypaycore-properties/src/main/resources/logback-spring.xml` configura i seguenti output:
+
+| File | Ruolo |
+|------|-------|
+| `backend.log` | Log tecnico generale del backend |
+| `mon.log` | Tracciamento sintetico di monitoraggio |
+| `app.log` | Flusso applicativo dedicato |
+| `audit.log` | Eventi di audit |
+| `filter.log` | Request/response tracing e filtri |
+
+### Package `util`
+
+Contiene componenti riusabili e trasversali, da usare per evitare duplicazione di costanti e helper sparsi nel codice.
+
+| Classe | Scopo |
+|--------|-------|
+| `Constants.java` | Contenitore centralizzato delle costanti applicative condivise (namespace, header, codici, chiavi, path, valori ricorrenti) |
+| `LogHelper.java` | Utility reflection-based che converte `Method` in firme leggibili per i log, con diversi livelli di dettaglio |
+| `Utilities.java` | Contenitore di metodi helper stateless e riusabili, richiamabili da più componenti applicativi |
+
+**Convenzioni di utilizzo**:
+- `Constants` deve contenere solo costanti condivise e semanticamente stabili; evitare di inserirvi valori temporanei o specifici di una singola classe
+- `Utilities` deve ospitare solo logica tecnica riusabile e priva di stato; non deve diventare un contenitore di business logic eterogenea
+- quando una costante o una utility è usata da un solo componente, è preferibile mantenerla vicino alla classe che la usa
 
 ---
 

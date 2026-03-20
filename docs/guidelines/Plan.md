@@ -56,6 +56,7 @@ MIDDLEWARE
 | Fase 2 | ✅ Completata | Resilienza, gestione errori, health check, test unitari |
 | Fase 3 | ✅ Completata | Persistenza PostgreSQL (plumbing): DataSource HikariCP + Jdbi configurati |
 | Fase 4 | ✅ Completata | Semplificazione configurazione: eliminazione profili, YAML→Properties |
+| Fase 4b | ✅ Completata | Logging e utility comuni: marker centralizzati, `logback-spring.xml`, `Constants`/`Utilities`, `JdbiSqlLogger` |
 | Fase 5 | ✅ Completata | Registro path-prefix, configurazione backend, ProxyForwardingClient |
 | Fase 6 | ✅ Completata | Schema DB: tabella configurazione enti e routing |
 | Fase 7 | ✅ Completata | Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint |
@@ -240,6 +241,20 @@ Rimandato alla **Fase 6** — vedi sezione dedicata.
 - Prefisso datasource `spring.datasource.pa.*` verificato e allineato
 - `startup.sh` aggiornato con `--spring.profiles.active=dev`
 - `AGENTS.md` aggiornato con tabella profili corretta
+
+---
+
+## Fase 4b - Infrastruttura Logging e Utility Comuni ✅
+
+**Data**: Marzo 2026
+
+### Attività completate ✅
+
+- Aggiunta la classe `LogMarker.java` per centralizzare i marker SLF4J del progetto
+- Aggiunta la classe `LogHelper.java` per formattare firme metodo leggibili nei log tecnici
+- Inserito `logback-spring.xml` nel modulo `mypay.mypaycore-properties` per la scrittura dei log su file separati (`backend`, `mon`, `app`, `audit`, `filter`)
+- Predisposte le classi `Constants.java` e `Utilities.java` come contenitori condivisi rispettivamente per costanti e helper riusabili
+- Attivato `JdbiSqlLogger` nella configurazione Jdbi per il tracciamento delle query SQL
 
 ---
 
