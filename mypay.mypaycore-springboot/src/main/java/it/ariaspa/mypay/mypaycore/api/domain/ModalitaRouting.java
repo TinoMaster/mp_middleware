@@ -3,25 +3,27 @@ package it.ariaspa.mypay.mypaycore.api.domain;
 /**
  * Enum che rappresenta la modalita di instradamento di una richiesta SOAP.
  *
- * <p>Determina come il middleware gestisce la richiesta per un determinato ente
- * e tipo di operazione:
+ * <p>Determina come il middleware gestisce la richiesta per un determinato ente:
  * <ul>
  *   <li>{@link #PIATTAFORMA_UNITARIA} — inoltro con autenticazione OAuth2 verso la
- *       Piattaforma Unitaria di pagoPA</li>
+ *       Piattaforma Unitaria di pagoPA. L'ente deve avere un record attivo in
+ *       {@code mygov_ente_config_pu}.</li>
  *   <li>{@link #LEGACY} — forward diretto (trasparente) verso il backend legacy
- *       (mypay o mypivot), senza autenticazione aggiuntiva</li>
+ *       (mypay o mypivot), senza autenticazione aggiuntiva. Usato quando l'ente
+ *       non ha configurazione PU attiva.</li>
  * </ul>
  *
- * <p>Il valore viene letto dalla colonna {@code modalita_routing} della tabella
- * {@code mwpay_ente_config} nel database.
+ * <p>La modalita e' derivata dalla presenza/assenza di un record attivo nella
+ * tabella {@code mygov_ente_config_pu} per il dato ente. Non e' piu' basata
+ * sul tipo di operazione SOAP.
  *
- * @see EnteConfig
+ * @see EnteCompleto#isPiattaformaUnitaria()
  */
 public enum ModalitaRouting {
 
     /**
      * Inoltra la richiesta alla Piattaforma Unitaria di pagoPA con autenticazione OAuth2.
-     * Il middleware aggiunge automaticamente il token Bearer alla richiesta.
+     * Il middleware ottiene il token Bearer specifico per l'ente e lo aggiunge alla richiesta.
      */
     PIATTAFORMA_UNITARIA,
 

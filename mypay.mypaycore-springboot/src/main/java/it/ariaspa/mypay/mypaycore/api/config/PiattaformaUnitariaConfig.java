@@ -6,11 +6,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Configurazione per la connessione alla Piattaforma Unitaria (pagoPA).
- * <p>
- * Legge le proprietà dal blocco 'piattaforma-unitaria' in application.yml.
- * Contiene le URL di base e le credenziali OAuth2 per l'autenticazione
- * tramite Client Credentials Flow.
+ * Configurazione globale per la connessione alla Piattaforma Unitaria (pagoPA).
+ *
+ * <p>Legge le proprieta' dal blocco {@code piattaforma-unitaria} in application.properties.
+ * Contiene l'URL di base e i parametri OAuth2 globali (token URL, grant type, scope).
+ *
+ * <p>Le credenziali per-ente ({@code client_id} e {@code client_secret}) <strong>non</strong>
+ * sono piu' presenti qui: vengono lette dalla tabella {@code mygov_ente_config_pu} tramite
+ * {@code EnteCacheService} e passate a {@code OAuthTokenService} a runtime.
  */
 @Getter
 @Setter
@@ -19,17 +22,18 @@ import org.springframework.context.annotation.Configuration;
 public class PiattaformaUnitariaConfig {
 
     /**
-     * URL base della Piattaforma Unitaria (es. https://api.uat.p4pa.pagopa.it)
+     * URL base della Piattaforma Unitaria (es. https://api.uat.p4pa.pagopa.it).
      */
     private String baseUrl;
 
     /**
-     * Configurazione OAuth2 per l'autenticazione verso la piattaforma.
+     * Configurazione OAuth2 globale per l'autenticazione verso la piattaforma.
      */
     private Auth auth = new Auth();
 
     /**
-     * Configurazione dei parametri OAuth2 Client Credentials.
+     * Parametri OAuth2 globali (comuni a tutti gli enti).
+     * Le credenziali per-ente (client_id, client_secret) sono nel DB.
      */
     @Getter
     @Setter
@@ -40,16 +44,6 @@ public class PiattaformaUnitariaConfig {
          * Es. https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token
          */
         private String tokenUrl;
-
-        /**
-         * Client ID per l'autenticazione OAuth2.
-         */
-        private String clientId;
-
-        /**
-         * Client Secret per l'autenticazione OAuth2.
-         */
-        private String clientSecret;
 
         /**
          * Grant type OAuth2 (default: client_credentials).

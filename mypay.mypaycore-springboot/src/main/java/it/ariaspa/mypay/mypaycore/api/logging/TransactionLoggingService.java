@@ -16,17 +16,17 @@ import org.springframework.stereotype.Service;
  * (post-request) ma <strong>non bloccante</strong>: se l'inserimento in DB fallisce,
  * viene registrato un warning nel log applicativo senza interrompere la risposta al SIL.
  *
- * <p>Il servizio offre due metodi principali:
+ * <p>Il servizio offre tre metodi principali:
  * <ul>
  *   <li>{@link #logSuccesso} — registra una transazione completata con successo</li>
  *   <li>{@link #logErrore} — registra una transazione fallita con messaggio di errore</li>
+ *   <li>{@link #logErrorePreRouting} — registra un errore avvenuto prima del routing</li>
  * </ul>
  *
  * <p>Informazioni registrate per ogni transazione:
  * <ul>
  *   <li>Codice IPA dell'ente ({@code codIpaEnte})</li>
- *   <li>Tipo di operazione SOAP ({@code tipoOperazione})</li>
- *   <li>Modalita di instradamento (PU o legacy)</li>
+ *   <li>Modalita' di instradamento (PU o legacy)</li>
  *   <li>Backend di destinazione (MYPAY o MYPIVOT)</li>
  *   <li>Path HTTP della richiesta</li>
  *   <li>Codice HTTP della risposta dal backend</li>
@@ -52,6 +52,13 @@ public class TransactionLoggingService {
     /** Lunghezza massima del messaggio di errore salvato nel DB (evita overflow). */
     private static final int MAX_MESSAGGIO_ERRORE_LENGTH = 1000;
 
+    /**
+     * Valore di default per il campo tipoOperazione nel DB.
+     * Il routing non e' piu' basato sul tipo operazione, ma il campo e' mantenuto per
+     * compatibilita' con lo schema della tabella.
+     */
+    private static final String TIPO_OPERAZIONE_DEFAULT = "N/A";
+
     private final TransactionLogRepository transactionLogRepository;
 
     /**
@@ -70,17 +77,15 @@ public class TransactionLoggingService {
      * registra un warning nel log applicativo e prosegue. La risposta al SIL
      * non deve mai essere bloccata da un errore di logging.
      *
-     * @param codIpaEnte     codice IPA dell'ente
-     * @param tipoOperazione tipo di operazione SOAP
-     * @param decision       decisione di routing (contiene destinazione, modalita, URL)
-     * @param pathRichiesta  path HTTP della richiesta SOAP
-     * @param httpStatus     codice HTTP della risposta dal backend (null se non disponibile)
-     * @param durataMs       durata della transazione in millisecondi
+     * @param codIpaEnte    codice IPA dell'ente
+     * @param decision      decisione di routing (contiene destinazione, modalita', URL)
+     * @param pathRichiesta path HTTP della richiesta SOAP
+     * @param httpStatus    codice HTTP della risposta dal backend (null se non disponibile)
+     * @param durataMs      durata della transazione in millisecondi
      */
-    public void logSuccesso(String codIpaEnte, String tipoOperazione,
-                            RoutingDecision decision, String pathRichiesta,
-                            Integer httpStatus, long durataMs) {
-        inserisciLog(codIpaEnte, tipoOperazione, decision.getModalita(),
+    public void logSuccesso(String codIpaEnte, RoutingDecision decision,
+                            String pathRichiesta, Integer httpStatus, long durataMs) {
+        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, decision.getModalita(),
                 decision.getDestinazione(), pathRichiesta, httpStatus,
                 ESITO_OK, null, durataMs);
     }
@@ -94,22 +99,21 @@ public class TransactionLoggingService {
      *
      * <p>Se l'inserimento nel DB fallisce, il metodo non rilancia l'eccezione.
      *
-     * @param codIpaEnte       codice IPA dell'ente
-     * @param tipoOperazione   tipo di operazione SOAP
-     * @param decision         decisione di routing (puo' essere null se l'errore avviene
-     *                         prima della decisione di routing)
-     * @param pathRichiesta    path HTTP della richiesta SOAP
-     * @param httpStatus       codice HTTP della risposta dal backend (null se non disponibile)
-     * @param messaggioErrore  messaggio di errore (senza dati sensibili)
-     * @param durataMs         durata della transazione in millisecondi
+     * @param codIpaEnte      codice IPA dell'ente
+     * @param decision        decisione di routing (puo' essere null se l'errore avviene
+     *                        prima della decisione di routing)
+     * @param pathRichiesta   path HTTP della richiesta SOAP
+     * @param httpStatus      codice HTTP della risposta dal backend (null se non disponibile)
+     * @param messaggioErrore messaggio di errore (senza dati sensibili)
+     * @param durataMs        durata della transazione in millisecondi
      */
-    public void logErrore(String codIpaEnte, String tipoOperazione,
-                          RoutingDecision decision, String pathRichiesta,
-                          Integer httpStatus, String messaggioErrore, long durataMs) {
+    public void logErrore(String codIpaEnte, RoutingDecision decision,
+                          String pathRichiesta, Integer httpStatus,
+                          String messaggioErrore, long durataMs) {
         ModalitaRouting modalita = decision != null ? decision.getModalita() : null;
         BackendDestinatario destinazione = decision != null ? decision.getDestinazione() : null;
 
-        inserisciLog(codIpaEnte, tipoOperazione, modalita, destinazione,
+        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, modalita, destinazione,
                 pathRichiesta, httpStatus, ESITO_ERRORE,
                 truncate(messaggioErrore), durataMs);
     }
@@ -122,15 +126,13 @@ public class TransactionLoggingService {
      * e quindi non c'e' una RoutingDecision disponibile.
      *
      * @param codIpaEnte      codice IPA dell'ente (puo' essere null se non estratto)
-     * @param tipoOperazione  tipo di operazione SOAP (puo' essere null)
      * @param pathRichiesta   path HTTP della richiesta SOAP
      * @param messaggioErrore messaggio di errore (senza dati sensibili)
      * @param durataMs        durata della transazione in millisecondi
      */
-    public void logErrorePreRouting(String codIpaEnte, String tipoOperazione,
-                                     String pathRichiesta, String messaggioErrore,
-                                     long durataMs) {
-        inserisciLog(codIpaEnte, tipoOperazione, null, null,
+    public void logErrorePreRouting(String codIpaEnte, String pathRichiesta,
+                                    String messaggioErrore, long durataMs) {
+        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, null, null,
                 pathRichiesta, null, ESITO_ERRORE,
                 truncate(messaggioErrore), durataMs);
     }
@@ -143,16 +145,16 @@ public class TransactionLoggingService {
      * interferisca mai con la risposta al SIL.
      */
     private void inserisciLog(String codIpaEnte, String tipoOperazione,
-                              ModalitaRouting modalita, BackendDestinatario destinazione,
-                              String pathRichiesta, Integer httpStatus,
-                              String esito, String messaggioErrore, long durataMs) {
+                               ModalitaRouting modalita, BackendDestinatario destinazione,
+                               String pathRichiesta, Integer httpStatus,
+                               String esito, String messaggioErrore, long durataMs) {
         try {
             String modalitaStr = modalita != null ? modalita.name() : "SCONOSCIUTA";
             String destinazioneStr = destinazione != null ? destinazione.name() : "SCONOSCIUTA";
 
             transactionLogRepository.insert(
                     codIpaEnte != null ? codIpaEnte : "N/A",
-                    tipoOperazione != null ? tipoOperazione : "N/A",
+                    tipoOperazione,
                     modalitaStr,
                     destinazioneStr,
                     pathRichiesta != null ? pathRichiesta : "N/A",
@@ -162,16 +164,16 @@ public class TransactionLoggingService {
                     durataMs
             );
 
-            log.debug("Log transazionale registrato: ente='{}', operazione='{}', "
+            log.debug("Log transazionale registrato: ente='{}', "
                             + "modalita={}, destinazione={}, esito={}, durata={}ms",
-                    codIpaEnte, tipoOperazione, modalitaStr, destinazioneStr, esito, durataMs);
+                    codIpaEnte, modalitaStr, destinazioneStr, esito, durataMs);
 
         } catch (Exception e) {
             // Non bloccare MAI la risposta al SIL per un errore di logging
             log.warn("Errore durante l'inserimento del log transazionale — la risposta "
-                            + "al SIL non viene bloccata. Dettagli: ente='{}', operazione='{}', "
+                            + "al SIL non viene bloccata. Dettagli: ente='{}', "
                             + "esito={}, errore='{}'",
-                    codIpaEnte, tipoOperazione, esito, e.getMessage());
+                    codIpaEnte, esito, e.getMessage());
         }
     }
 

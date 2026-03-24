@@ -41,14 +41,13 @@ import java.nio.charset.StandardCharsets;
  * sul path {@code /ws/pivot/PagamentiTelematiciPagatiRiconciliati} e le instrada
  * verso il backend corretto in base alla configurazione dell'ente nel database.
  *
- * <p>Flusso (Fase 9 — routing dinamico PU/legacy con logging e metriche):
+ * <p>Flusso (routing dinamico PU/legacy per-ente con logging e metriche):
  * <ol>
  *   <li>Il SIL invia una richiesta SOAP a questo endpoint</li>
- *   <li>L'endpoint estrae {@code codIpaEnte} dall'Header SOAP e il {@code tipoOperazione}
- *       dal local part del messaggio</li>
- *   <li>Il {@link RoutingDecisionService} decide la destinazione e la modalita:
+ *   <li>L'endpoint estrae {@code codIpaEnte} dall'Header SOAP</li>
+ *   <li>Il {@link RoutingDecisionService} decide la destinazione e la modalita':
  *       <ul>
- *         <li><strong>PIATTAFORMA_UNITARIA</strong>: inoltro con OAuth2 via
+ *         <li><strong>PIATTAFORMA_UNITARIA</strong>: inoltro con OAuth2 per-ente via
  *             {@link PiattaformaUnitariaClient}</li>
  *         <li><strong>LEGACY</strong>: forward diretto via {@link ProxyForwardingClient}</li>
  *       </ul>
@@ -103,7 +102,8 @@ public class ReconciliationEndpoint {
 
     /**
      * Tipo di operazione SOAP gestita da questo endpoint.
-     * Corrisponde al local part del messaggio SOAP nel body.
+     * Mantenuto per compatibilita' con il logging transazionale.
+     * @deprecated Il routing non dipende piu' dal tipo operazione, ma solo da codIpaEnte.
      */
     static final String TIPO_OPERAZIONE = "pivotSILAutorizzaImportFlussoTesoreria";
 
@@ -185,16 +185,16 @@ public class ReconciliationEndpoint {
             requestPath = extractRequestPath();
             log.debug("Path HTTP della richiesta: '{}'", requestPath);
 
-            // Decisione di routing: PU o legacy?
-            decision = routingDecisionService.decide(
-                    codIpaEnte, TIPO_OPERAZIONE, requestPath);
+            // Decisione di routing: PU o legacy? (routing per-ente, senza tipoOperazione)
+            decision = routingDecisionService.decide(codIpaEnte, requestPath);
 
             // Instrada in base alla decisione
             String responseXml;
             if (decision.isPiattaformaUnitaria()) {
                 log.info("Routing verso PIATTAFORMA_UNITARIA per ente '{}'", codIpaEnte);
+                // Passa i dati dell'ente (incluse credenziali OAuth2) al client
                 responseXml = piattaformaClient.forwardSoapRequest(
-                        PLATFORM_RECONCILIATION_PATH, fullSoapEnvelope);
+                        PLATFORM_RECONCILIATION_PATH, fullSoapEnvelope, decision.getEnte());
             } else {
                 log.info("Routing verso backend LEGACY ({}) per ente '{}'",
                         decision.getDestinazione(), codIpaEnte);
@@ -202,7 +202,7 @@ public class ReconciliationEndpoint {
                         decision.getDestinazione(), requestPath, fullSoapEnvelope);
             }
 
-            log.info("Risposta ricevuta dal backend per la riconciliazione (modalita: {})",
+            log.info("Risposta ricevuta dal backend per la riconciliazione (modalita': {})",
                     decision.getModalita());
             log.debug("Risposta completa:\n{}", responseXml);
 
@@ -211,9 +211,8 @@ public class ReconciliationEndpoint {
 
             // Registra successo nel log transazionale e nelle metriche
             long durataMs = System.currentTimeMillis() - startTime;
-            transactionLoggingService.logSuccesso(
-                    codIpaEnte, TIPO_OPERAZIONE, decision, requestPath, 200, durataMs);
-            metricsService.registraSuccesso(codIpaEnte, TIPO_OPERAZIONE, decision, durataMs);
+            transactionLoggingService.logSuccesso(codIpaEnte, decision, requestPath, 200, durataMs);
+            metricsService.registraSuccesso(codIpaEnte, decision, durataMs);
 
             return responseElement;
 
@@ -222,14 +221,12 @@ public class ReconciliationEndpoint {
             long durataMs = System.currentTimeMillis() - startTime;
             if (decision != null) {
                 transactionLoggingService.logErrore(
-                        codIpaEnte, TIPO_OPERAZIONE, decision, requestPath,
-                        null, e.getMessage(), durataMs);
+                        codIpaEnte, decision, requestPath, null, e.getMessage(), durataMs);
             } else {
                 transactionLoggingService.logErrorePreRouting(
-                        codIpaEnte, TIPO_OPERAZIONE, requestPath,
-                        e.getMessage(), durataMs);
+                        codIpaEnte, requestPath, e.getMessage(), durataMs);
             }
-            metricsService.registraErrore(codIpaEnte, TIPO_OPERAZIONE, decision, durataMs);
+            metricsService.registraErrore(codIpaEnte, decision, durataMs);
 
             // Le eccezioni di routing (EnteNonCensitoException, PathNonRiconosciutoException)
             // e di comunicazione vengono propagate al SoapFaultExceptionResolver

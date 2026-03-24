@@ -5,8 +5,9 @@ import it.ariaspa.mypay.mypaycore.api.common.exception.PathNonRiconosciutoExcept
 import it.ariaspa.mypay.mypaycore.api.config.BackendRoutingConfig;
 import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig;
 import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
-import it.ariaspa.mypay.mypaycore.api.domain.EnteConfig;
-import it.ariaspa.mypay.mypaycore.api.repository.EnteConfigCacheService;
+import it.ariaspa.mypay.mypaycore.api.domain.EnteCompleto;
+import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
+import it.ariaspa.mypay.mypaycore.api.repository.EnteCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -16,14 +17,14 @@ import java.util.Optional;
 /**
  * Servizio centrale di decisione del routing — il "cervello" del gateway.
  *
- * <p>Data una richiesta SOAP (identificata da {@code codIpaEnte}, {@code tipoOperazione}
- * e {@code pathRichiesta}), questo servizio determina:
+ * <p>Data una richiesta SOAP (identificata da {@code codIpaEnte} e {@code pathRichiesta}),
+ * questo servizio determina:
  * <ol>
  *   <li><strong>Destinazione</strong> (MYPAY o MYPIVOT): derivata dal path HTTP della
  *       richiesta tramite il {@link PathRegistryConfig}</li>
- *   <li><strong>Modalita di instradamento</strong> (PU con OAuth2 o legacy diretto):
- *       derivata dalla configurazione dell'ente nel database, letta tramite
- *       {@link EnteConfigCacheService}</li>
+ *   <li><strong>Modalita' di instradamento</strong> (PU con OAuth2 o legacy diretto):
+ *       derivata dalla presenza di una configurazione PU attiva per l'ente in
+ *       {@link EnteCacheService}</li>
  * </ol>
  *
  * <p>Algoritmo di decisione:
@@ -31,19 +32,21 @@ import java.util.Optional;
  * 1. Risolvere il backend di destinazione dal path (PathRegistryConfig)
  *    → se non trovato: PathNonRiconosciutoException → SOAP Fault PATH_NON_RICONOSCIUTO
  *
- * 2. Cercare la configurazione dell'ente nel DB/cache (EnteConfigCacheService)
+ * 2. Cercare l'ente nel DB/cache (EnteCacheService)
  *    → se non trovato: EnteNonCensitoException → SOAP Fault ENTE_NON_AUTORIZZATO
  *
- * 3. Comporre la RoutingDecision con destinazione, modalita e URL backend
+ * 3. Determinare la modalita' dal flag isPiattaformaUnitaria() dell'EnteCompleto
+ *
+ * 4. Comporre la RoutingDecision con destinazione, modalita', URL backend ed EnteCompleto
  * </pre>
  *
  * <p>Il servizio non esegue alcuna comunicazione HTTP — si limita a prendere la decisione.
- * L'effettivo inoltro e' responsabilita dell'endpoint SOAP che utilizza
+ * L'effettivo inoltro e' responsabilita' dell'endpoint SOAP che utilizza
  * {@code PiattaformaUnitariaClient} o {@code ProxyForwardingClient} in base alla decisione.
  *
  * @see RoutingDecision
  * @see PathRegistryConfig
- * @see EnteConfigCacheService
+ * @see EnteCacheService
  * @see BackendRoutingConfig
  */
 @Service
@@ -52,21 +55,21 @@ public class RoutingDecisionService {
     private static final Logger log = LoggerFactory.getLogger(RoutingDecisionService.class);
 
     private final PathRegistryConfig pathRegistryConfig;
-    private final EnteConfigCacheService enteConfigCacheService;
+    private final EnteCacheService enteCacheService;
     private final BackendRoutingConfig backendRoutingConfig;
 
     /**
      * Crea il servizio di decisione del routing con le dipendenze necessarie.
      *
-     * @param pathRegistryConfig    registro dei path-prefix configurati
-     * @param enteConfigCacheService cache delle configurazioni enti
-     * @param backendRoutingConfig  configurazione degli URL dei backend
+     * @param pathRegistryConfig   registro dei path-prefix configurati
+     * @param enteCacheService     cache degli enti con le loro configurazioni PU
+     * @param backendRoutingConfig configurazione degli URL dei backend
      */
     public RoutingDecisionService(PathRegistryConfig pathRegistryConfig,
-                                  EnteConfigCacheService enteConfigCacheService,
+                                  EnteCacheService enteCacheService,
                                   BackendRoutingConfig backendRoutingConfig) {
         this.pathRegistryConfig = pathRegistryConfig;
-        this.enteConfigCacheService = enteConfigCacheService;
+        this.enteCacheService = enteCacheService;
         this.backendRoutingConfig = backendRoutingConfig;
     }
 
@@ -76,30 +79,34 @@ public class RoutingDecisionService {
      * <p>Esegue il routing a due dimensioni:
      * <ol>
      *   <li>Routing per path: determina il backend di destinazione (MYPAY/MYPIVOT)</li>
-     *   <li>Routing per modalita: determina se usare PU (OAuth2) o legacy (forward diretto)</li>
+     *   <li>Routing per modalita': determina se usare PU (OAuth2) o legacy (forward diretto)
+     *       in base alla configurazione dell'ente nel database</li>
      * </ol>
      *
-     * @param codIpaEnte     codice IPA dell'ente (estratto dall'Header SOAP)
-     * @param tipoOperazione tipo di operazione SOAP (local part del messaggio)
-     * @param pathRichiesta  path HTTP della richiesta (es. {@code /ws/pivot/PagamentiTelematici...})
-     * @return la decisione di routing con destinazione, modalita e URL
+     * @param codIpaEnte    codice IPA dell'ente (estratto dall'Header SOAP)
+     * @param pathRichiesta path HTTP della richiesta (es. {@code /ws/pivot/PagamentiTelematici...})
+     * @return la decisione di routing con destinazione, modalita', URL e dati dell'ente
      * @throws PathNonRiconosciutoException se il path non corrisponde a nessun backend configurato
-     * @throws EnteNonCensitoException      se l'ente non ha una regola attiva per l'operazione richiesta
+     * @throws EnteNonCensitoException      se l'ente non e' censito in {@code mygov_ente}
      */
-    public RoutingDecision decide(String codIpaEnte, String tipoOperazione, String pathRichiesta) {
-        log.info("Decisione di routing per: codIpaEnte='{}', tipoOperazione='{}', path='{}'",
-                codIpaEnte, tipoOperazione, pathRichiesta);
+    public RoutingDecision decide(String codIpaEnte, String pathRichiesta) {
+        log.info("Decisione di routing per: codIpaEnte='{}', path='{}'",
+                codIpaEnte, pathRichiesta);
 
         // --- Passo 1: Routing per path → destinazione backend ---
         BackendDestinatario destinazione = resolveDestinazione(pathRichiesta);
 
-        // --- Passo 2: Routing per modalita → PU o legacy ---
-        EnteConfig enteConfig = resolveEnteConfig(codIpaEnte, tipoOperazione);
+        // --- Passo 2: Lookup ente → PU o legacy ---
+        EnteCompleto ente = resolveEnte(codIpaEnte);
 
-        // --- Passo 3: Comporre la decisione ---
+        // --- Passo 3: Determinare la modalita' di routing ---
+        ModalitaRouting modalita = ente.isPiattaformaUnitaria()
+                ? ModalitaRouting.PIATTAFORMA_UNITARIA
+                : ModalitaRouting.LEGACY;
+
+        // --- Passo 4: Comporre la decisione ---
         String urlBackend = backendRoutingConfig.getBaseUrlFor(destinazione);
-
-        RoutingDecision decision = new RoutingDecision(destinazione, enteConfig.getModalitaRouting(), urlBackend);
+        RoutingDecision decision = new RoutingDecision(destinazione, modalita, urlBackend, ente);
 
         log.info("Decisione di routing completata: {}", decision);
         return decision;
@@ -125,25 +132,22 @@ public class RoutingDecisionService {
     }
 
     /**
-     * Recupera la configurazione di routing dell'ente dalla cache/DB.
+     * Recupera i dati dell'ente dalla cache/DB.
      *
-     * @param codIpaEnte     codice IPA dell'ente
-     * @param tipoOperazione tipo di operazione SOAP
-     * @return la configurazione dell'ente
-     * @throws EnteNonCensitoException se l'ente non ha una regola attiva per l'operazione
+     * @param codIpaEnte codice IPA dell'ente
+     * @return le informazioni complete dell'ente con configurazione PU opzionale
+     * @throws EnteNonCensitoException se l'ente non e' censito in {@code mygov_ente}
      */
-    private EnteConfig resolveEnteConfig(String codIpaEnte, String tipoOperazione) {
-        Optional<EnteConfig> enteConfig = enteConfigCacheService
-                .findByCodIpaEnteAndTipoOperazione(codIpaEnte, tipoOperazione);
+    private EnteCompleto resolveEnte(String codIpaEnte) {
+        Optional<EnteCompleto> ente = enteCacheService.findByCodIpaEnte(codIpaEnte);
 
-        if (enteConfig.isEmpty()) {
-            log.warn("Ente non censito: codIpaEnte='{}', tipoOperazione='{}'. "
-                    + "Nessuna regola di routing attiva trovata.", codIpaEnte, tipoOperazione);
-            throw new EnteNonCensitoException(codIpaEnte, tipoOperazione);
+        if (ente.isEmpty()) {
+            log.warn("Ente non censito: codIpaEnte='{}'. Non trovato in mygov_ente.", codIpaEnte);
+            throw new EnteNonCensitoException(codIpaEnte);
         }
 
-        log.debug("Configurazione ente trovata: {} → modalita: {}",
-                codIpaEnte, enteConfig.get().getModalitaRouting());
-        return enteConfig.get();
+        log.debug("Ente trovato: {} → piattaformaUnitaria: {}",
+                codIpaEnte, ente.get().isPiattaformaUnitaria());
+        return ente.get();
     }
 }

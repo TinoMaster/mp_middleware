@@ -57,12 +57,10 @@ public class SoapFaultExceptionResolver implements EndpointExceptionResolver {
             SoapFault fault;
 
             if (ex instanceof EnteNonCensitoException enteEx) {
-                // Ente non censito → SOAP Fault Client (errore del chiamante)
+                // Ente non censito in mygov_ente → SOAP Fault Client (errore del chiamante)
                 fault = soapBody.addClientOrSenderFault(
                         "Ente non autorizzato: codIpaEnte='" + enteEx.getCodIpaEnte()
-                        + "', tipoOperazione='" + enteEx.getTipoOperazione()
-                        + "'. L'ente non e' censito nel middleware oppure "
-                        + "non ha una regola di routing attiva per questa operazione.",
+                        + "'. L'ente non e' censito nel sistema (tabella mygov_ente).",
                         Locale.ITALIAN
                 );
                 addFaultDetailCode(fault, "ENTE_NON_AUTORIZZATO");

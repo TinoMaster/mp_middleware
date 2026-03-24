@@ -1,7 +1,8 @@
 package it.ariaspa.mypay.mypaycore.api.config;
 
 import it.ariaspa.mypay.mypaycore.api.logging.JdbiSqlLogger;
-import it.ariaspa.mypay.mypaycore.api.repository.EnteConfigRepository;
+import it.ariaspa.mypay.mypaycore.api.repository.EnteConfigPuRepository;
+import it.ariaspa.mypay.mypaycore.api.repository.EnteRepository;
 import it.ariaspa.mypay.mypaycore.api.repository.TransactionLogRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.jdbi.v3.core.Jdbi;
@@ -118,17 +119,28 @@ public class JdbiConfiguration {
     // --- DAO Jdbi: registrati come bean Spring tramite onDemand() ---
 
     /**
-     * Registra il DAO per la tabella {@code mwpay_ente_config}.
+     * Registra il DAO per la tabella condivisa {@code mygov_ente}.
      *
      * <p>Il metodo {@code onDemand()} crea un proxy che apre e chiude automaticamente
      * un handle Jdbi per ogni invocazione di metodo, integrandosi con le transazioni Spring.
      *
      * @param jdbi istanza Jdbi principale
-     * @return proxy DAO per la configurazione enti
+     * @return proxy DAO per l'anagrafica enti
      */
     @Bean
-    public EnteConfigRepository enteConfigRepository(@Qualifier("jdbiPa") Jdbi jdbi) {
-        return jdbi.onDemand(EnteConfigRepository.class);
+    public EnteRepository enteRepository(@Qualifier("jdbiPa") Jdbi jdbi) {
+        return jdbi.onDemand(EnteRepository.class);
+    }
+
+    /**
+     * Registra il DAO per la tabella {@code mygov_ente_config_pu}.
+     *
+     * @param jdbi istanza Jdbi principale
+     * @return proxy DAO per le configurazioni OAuth2 degli enti verso la PU
+     */
+    @Bean
+    public EnteConfigPuRepository enteConfigPuRepository(@Qualifier("jdbiPa") Jdbi jdbi) {
+        return jdbi.onDemand(EnteConfigPuRepository.class);
     }
 
     /**

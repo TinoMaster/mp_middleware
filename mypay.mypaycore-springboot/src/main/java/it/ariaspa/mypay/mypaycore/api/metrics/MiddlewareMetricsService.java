@@ -1,8 +1,7 @@
 package it.ariaspa.mypay.mypaycore.api.metrics;
 
-import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
 import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
-import it.ariaspa.mypay.mypaycore.api.repository.EnteConfigCacheService;
+import it.ariaspa.mypay.mypaycore.api.repository.EnteCacheService;
 import it.ariaspa.mypay.mypaycore.api.routing.RoutingDecision;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -23,20 +22,21 @@ import java.util.concurrent.TimeUnit;
  * <p>Metriche registrate:
  * <ul>
  *   <li><strong>{@code middleware.richieste.totali}</strong> — contatore delle richieste SOAP
- *       processate, con tag: {@code ente}, {@code operazione}, {@code modalita},
- *       {@code destinazione}, {@code esito}</li>
+ *       processate, con tag: {@code ente}, {@code modalita}, {@code destinazione},
+ *       {@code esito}</li>
  *   <li><strong>{@code middleware.richieste.durata}</strong> — istogramma della durata
- *       delle richieste in millisecondi, con tag: {@code operazione}, {@code modalita},
- *       {@code destinazione}</li>
- *   <li><strong>{@code middleware.enti.configurati}</strong> — gauge del numero di
- *       configurazioni enti attive nella cache</li>
+ *       delle richieste in millisecondi, con tag: {@code modalita}, {@code destinazione}</li>
+ *   <li><strong>{@code middleware.enti.totali}</strong> — gauge del numero totale di
+ *       enti censiti in cache</li>
+ *   <li><strong>{@code middleware.enti.piattaforma.unitaria}</strong> — gauge del numero
+ *       di enti con configurazione PU attiva</li>
  * </ul>
  *
- * <p>I tag permettono di filtrare e aggregare le metriche per ente, operazione,
- * modalita di routing e backend di destinazione.
+ * <p>I tag permettono di filtrare e aggregare le metriche per ente, modalita'
+ * di routing e backend di destinazione.
  *
  * @see io.micrometer.core.instrument.MeterRegistry
- * @see EnteConfigCacheService
+ * @see EnteCacheService
  */
 @Service
 public class MiddlewareMetricsService {
@@ -49,8 +49,11 @@ public class MiddlewareMetricsService {
     /** Nome della metrica timer per la durata delle richieste. */
     static final String METRICA_RICHIESTE_DURATA = "middleware.richieste.durata";
 
-    /** Nome della metrica gauge per gli enti configurati. */
-    static final String METRICA_ENTI_CONFIGURATI = "middleware.enti.configurati";
+    /** Nome della metrica gauge per il totale enti censiti. */
+    static final String METRICA_ENTI_TOTALI = "middleware.enti.totali";
+
+    /** Nome della metrica gauge per gli enti con PU attiva. */
+    static final String METRICA_ENTI_PU = "middleware.enti.piattaforma.unitaria";
 
     /** Descrizione della metrica contatore. */
     private static final String DESC_RICHIESTE = "Numero totale di richieste SOAP processate dal middleware";
@@ -58,27 +61,35 @@ public class MiddlewareMetricsService {
     /** Descrizione della metrica timer. */
     private static final String DESC_DURATA = "Durata delle richieste SOAP processate dal middleware";
 
-    /** Descrizione della metrica gauge. */
-    private static final String DESC_ENTI = "Numero di configurazioni enti attive nella cache";
+    /** Descrizione gauge enti totali. */
+    private static final String DESC_ENTI_TOTALI = "Numero totale di enti censiti nella cache (mygov_ente)";
+
+    /** Descrizione gauge enti PU. */
+    private static final String DESC_ENTI_PU = "Numero di enti con configurazione PU attiva";
 
     private final MeterRegistry meterRegistry;
 
     /**
-     * Crea il servizio metriche e registra il gauge per gli enti configurati.
+     * Crea il servizio metriche e registra i gauge per gli enti.
      *
-     * @param meterRegistry  registro Micrometer per la pubblicazione delle metriche
-     * @param enteConfigCacheService servizio cache per leggere il numero di enti attivi
+     * @param meterRegistry   registro Micrometer per la pubblicazione delle metriche
+     * @param enteCacheService servizio cache per leggere il numero di enti attivi
      */
     public MiddlewareMetricsService(MeterRegistry meterRegistry,
-                                     EnteConfigCacheService enteConfigCacheService) {
+                                    EnteCacheService enteCacheService) {
         this.meterRegistry = meterRegistry;
 
-        // Registra il gauge: viene letto periodicamente da Actuator
-        meterRegistry.gauge(METRICA_ENTI_CONFIGURATI, enteConfigCacheService,
+        // Gauge: numero totale di enti censiti (mygov_ente)
+        meterRegistry.gauge(METRICA_ENTI_TOTALI, enteCacheService,
                 cache -> (double) cache.size());
 
-        log.info("Metriche middleware inizializzate: {}, {}, {}",
-                METRICA_RICHIESTE_TOTALI, METRICA_RICHIESTE_DURATA, METRICA_ENTI_CONFIGURATI);
+        // Gauge: numero di enti con flusso PU attivo
+        meterRegistry.gauge(METRICA_ENTI_PU, enteCacheService,
+                cache -> (double) cache.countEntiPiattaformaUnitaria());
+
+        log.info("Metriche middleware inizializzate: {}, {}, {}, {}",
+                METRICA_RICHIESTE_TOTALI, METRICA_RICHIESTE_DURATA,
+                METRICA_ENTI_TOTALI, METRICA_ENTI_PU);
     }
 
     /**
@@ -87,14 +98,12 @@ public class MiddlewareMetricsService {
      * <p>Incrementa il contatore delle richieste con tag {@code esito=OK} e
      * registra la durata nell'istogramma.
      *
-     * @param codIpaEnte     codice IPA dell'ente
-     * @param tipoOperazione tipo di operazione SOAP
-     * @param decision       decisione di routing
-     * @param durataMs       durata della transazione in millisecondi
+     * @param codIpaEnte codice IPA dell'ente
+     * @param decision   decisione di routing
+     * @param durataMs   durata della transazione in millisecondi
      */
-    public void registraSuccesso(String codIpaEnte, String tipoOperazione,
-                                  RoutingDecision decision, long durataMs) {
-        registraMetriche(codIpaEnte, tipoOperazione, decision, "OK", durataMs);
+    public void registraSuccesso(String codIpaEnte, RoutingDecision decision, long durataMs) {
+        registraMetriche(codIpaEnte, decision, "OK", durataMs);
     }
 
     /**
@@ -103,14 +112,12 @@ public class MiddlewareMetricsService {
      * <p>Incrementa il contatore delle richieste con tag {@code esito=ERRORE} e
      * registra la durata nell'istogramma.
      *
-     * @param codIpaEnte     codice IPA dell'ente (puo' essere null se non estratto)
-     * @param tipoOperazione tipo di operazione SOAP (puo' essere null)
-     * @param decision       decisione di routing (puo' essere null se l'errore precede il routing)
-     * @param durataMs       durata della transazione in millisecondi
+     * @param codIpaEnte codice IPA dell'ente (puo' essere null se non estratto)
+     * @param decision   decisione di routing (puo' essere null se l'errore precede il routing)
+     * @param durataMs   durata della transazione in millisecondi
      */
-    public void registraErrore(String codIpaEnte, String tipoOperazione,
-                                RoutingDecision decision, long durataMs) {
-        registraMetriche(codIpaEnte, tipoOperazione, decision, "ERRORE", durataMs);
+    public void registraErrore(String codIpaEnte, RoutingDecision decision, long durataMs) {
+        registraMetriche(codIpaEnte, decision, "ERRORE", durataMs);
     }
 
     /**
@@ -119,11 +126,10 @@ public class MiddlewareMetricsService {
      * <p>Protetto da try-catch: un errore nella raccolta metriche non deve mai
      * interferire con il flusso principale.
      */
-    private void registraMetriche(String codIpaEnte, String tipoOperazione,
-                                   RoutingDecision decision, String esito, long durataMs) {
+    private void registraMetriche(String codIpaEnte, RoutingDecision decision,
+                                   String esito, long durataMs) {
         try {
             String ente = codIpaEnte != null ? codIpaEnte : "sconosciuto";
-            String operazione = tipoOperazione != null ? tipoOperazione : "sconosciuta";
             String modalita = decision != null ? decision.getModalita().name() : "SCONOSCIUTA";
             String destinazione = decision != null ? decision.getDestinazione().name() : "SCONOSCIUTA";
 
@@ -131,7 +137,6 @@ public class MiddlewareMetricsService {
             Counter.builder(METRICA_RICHIESTE_TOTALI)
                     .description(DESC_RICHIESTE)
                     .tag("ente", ente)
-                    .tag("operazione", operazione)
                     .tag("modalita", modalita)
                     .tag("destinazione", destinazione)
                     .tag("esito", esito)
@@ -141,7 +146,6 @@ public class MiddlewareMetricsService {
             // Timer durata: registra la durata in millisecondi
             Timer.builder(METRICA_RICHIESTE_DURATA)
                     .description(DESC_DURATA)
-                    .tag("operazione", operazione)
                     .tag("modalita", modalita)
                     .tag("destinazione", destinazione)
                     .register(meterRegistry)

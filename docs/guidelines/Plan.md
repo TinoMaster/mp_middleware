@@ -62,6 +62,7 @@ MIDDLEWARE
 | Fase 7 | ✅ Completata | Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint |
 | Fase 8 | ⬜ Da fare (bloccata) | Endpoint SOAP completi — richiede censimento endpoint dai team backend |
 | Fase 9 | ✅ Completata | Log transazionale, audit, metriche |
+| Fase 10 | ✅ Completata | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
 
 ---
 
@@ -763,6 +764,108 @@ Gestione robusta: i parametri `null` vengono sostituiti con `"sconosciuto"`.
 
 ---
 
+## Fase 10 - Refactoring Multi-Ente (Credenziali OAuth2 per-ente) ✅
+
+**Data**: 24 Marzo 2026  
+**Risultato**: `mvn compile` → BUILD SUCCESS (42 source files, 0 errori). Test Java eliminati — testing via Postman E2E.
+
+**Obiettivo**: Evolvere il middleware da un'architettura con credenziali OAuth2 globali a un'architettura **multi-ente** dove ogni ente pubblico ha le proprie credenziali OAuth2 (`client_id` e `client_secret`) memorizzate nel database. Il routing PU vs LEGACY dipende dalla **presenza/assenza** di una configurazione attiva per l'ente, non più da una colonna `modalita_routing` esplicita.
+
+### Decisioni architetturali prese
+
+| Decisione | Scelta |
+|-----------|--------|
+| Schema DB | Nuova tabella `mygov_ente_config_pu` (prefisso `mygov_` — parte del dominio PA) |
+| Tabella enti | Usa `mygov_ente` esistente nel DB condiviso — non creata dal middleware |
+| Credenziali OAuth2 | Per-ente in `mygov_ente_config_pu.client_id` / `.client_secret` |
+| Logica routing | `EnteCompleto.isPiattaformaUnitaria()` — routing basato su presenza/assenza config PU |
+| `tipoOperazione` nel routing | **Eliminata** — il routing è per-ente, non per-operazione |
+| `OAuthTokenInterceptor` | **Eliminato** — il token Bearer viene aggiunto manualmente da `PiattaformaUnitariaClient` |
+| Cache token | `ConcurrentHashMap<codIpaEnte, TokenData>` — una entry per ente |
+| Cache enti | `EnteCacheService` con `ConcurrentHashMap<codIpaEnte, EnteCompleto>` |
+| Test Java | **Eliminati** — testing esclusivamente via Postman E2E |
+| Dipendenze test | `spring-boot-starter-test` e `spring-ws-test` rimossi dal `pom.xml` |
+
+### Componenti eliminati
+
+| Componente | Tipo | Motivo |
+|-----------|------|--------|
+| `EnteConfig.java` | Dominio | Sostituito da `Ente` + `EnteConfigPu` + `EnteCompleto` |
+| `EnteConfigRepository.java` | DAO | Sostituito da `EnteRepository` + `EnteConfigPuRepository` |
+| `EnteConfigRowMapper.java` | RowMapper | Sostituito da `EnteRowMapper` + `EnteConfigPuRowMapper` |
+| `EnteConfigCacheService.java` | Cache | Sostituito da `EnteCacheService` |
+| `OAuthTokenInterceptor.java` | Interceptor | Token Bearer aggiunto manualmente da `PiattaformaUnitariaClient` |
+| `src/test/` (14 classi, 124 test) | Test | Testing spostato su Postman E2E |
+| `001_CREATE_MWPAY_ENTE_CONFIG.sql` | SQL | Sostituito da `004_CREATE_MYGOV_ENTE_CONFIG_PU.sql` |
+| `003_INSERT_ENTE_CONFIG_EXAMPLE.sql` | SQL | Sostituito da `006_INSERT_ENTE_CONFIG_PU_EXAMPLE.sql` |
+
+### Componenti creati
+
+| Componente | Tipo | Descrizione |
+|-----------|------|-------------|
+| `domain/Ente.java` | Dominio | Modello tabella `mygov_ente` (DB condiviso) |
+| `domain/EnteConfigPu.java` | Dominio | Modello tabella `mygov_ente_config_pu` con `client_id`, `client_secret`, `attivo` |
+| `domain/EnteCompleto.java` | Aggregato | Ente + EnteConfigPu; metodi: `isPiattaformaUnitaria()`, `getClientId()`, `getClientSecret()` |
+| `repository/EnteRepository.java` | DAO | Jdbi per `mygov_ente`; LEFT JOIN con `mygov_ente_config_pu` |
+| `repository/EnteConfigPuRepository.java` | DAO | Jdbi per `mygov_ente_config_pu` |
+| `repository/EnteRowMapper.java` | RowMapper | Mapping ResultSet → `Ente` |
+| `repository/EnteConfigPuRowMapper.java` | RowMapper | Mapping ResultSet → `EnteConfigPu` |
+| `repository/EnteCacheService.java` | Cache | Cache TTL `ConcurrentHashMap<codIpaEnte, EnteCompleto>`; metodi: `findByCodIpaEnte()`, `size()`, `countEntiPiattaformaUnitaria()` |
+| `004_CREATE_MYGOV_ENTE_CONFIG_PU.sql` | SQL | Crea tabella `mygov_ente_config_pu` |
+| `005_DROP_MWPAY_ENTE_CONFIG.sql` | SQL | Rimuove la vecchia tabella (eseguire in migrazione) |
+| `006_INSERT_ENTE_CONFIG_PU_EXAMPLE.sql` | SQL | Dati di esempio per dev |
+
+### Componenti aggiornati
+
+| Componente | Modifica |
+|-----------|---------|
+| `OAuthTokenService.java` | Multi-ente: `ConcurrentHashMap<codIpaEnte, TokenData>`; nuovi metodi `getAccessToken(codIpaEnte, clientId, clientSecret)`, `refreshToken(codIpaEnte, clientId, clientSecret)`, `isTokenValid(codIpaEnte)`, `getTokenCacheSize()`, `getEntiInCache()` |
+| `PiattaformaUnitariaConfig.java` | Rimossi `clientId` e `clientSecret` dall'inner class `Auth` |
+| `RoutingDecision.java` | Aggiunto campo `EnteCompleto ente`; costruttore: `(destinazione, modalita, urlBackend, ente)` |
+| `RoutingDecisionService.java` | Firma: `decide(codIpaEnte, pathRichiesta)` (rimossa `tipoOperazione`); usa `EnteCacheService`; algoritmo 2 passi |
+| `PiattaformaUnitariaClient.java` | Firma: `forwardSoapRequest(path, soapXml, ente)`; Bearer aggiunto manualmente |
+| `ReconciliationEndpoint.java` | Chiama `routingDecisionService.decide(codIpaEnte, requestPath)` (2 param); chiama `piattaformaClient.forwardSoapRequest(path, xml, decision.getEnte())` |
+| `EnteNonCensitoException.java` | Rimossa `tipoOperazione`; costruttore: `EnteNonCensitoException(codIpaEnte)` |
+| `SoapFaultExceptionResolver.java` | Messaggio fault aggiornato (senza `tipoOperazione`) |
+| `OAuthTokenHealthIndicator.java` | Itera su tutti gli enti in cache token; riporta `tokensValidi` e `tokensInCache` |
+| `EnteConfigHealthIndicator.java` | Usa `EnteCacheService`; riporta `entiTotali`, `entiConPiattaformaUnitaria`, `entiLegacy` |
+| `TransactionLoggingService.java` | Rimossa `tipoOperazione` dalle firme pubbliche; usa costante `"N/A"` internamente per compatibilità DB |
+| `MiddlewareMetricsService.java` | Usa `EnteCacheService`; rimossa `tipoOperazione`; due gauge: `middleware.enti.totali` e `middleware.enti.piattaforma.unitaria` |
+| `JdbiConfiguration.java` | Registra i nuovi RowMapper (`EnteRowMapper`, `EnteConfigPuRowMapper`) e repository |
+| `application.properties` | Rimossi `piattaforma-unitaria.auth.client-id` e `.client-secret`; aggiornato commento cache |
+| `application-dev.properties` | Rimossi `piattaforma-unitaria.auth.client-id` e `.client-secret` |
+| `pom.xml` | Rimossi `spring-boot-starter-test` e `spring-ws-test` |
+
+### Script SQL aggiornati
+
+| Script | Stato | Scopo |
+|--------|-------|-------|
+| `000_PLACEHOLDER.sql` | Invariato | Placeholder vuoto |
+| `002_CREATE_MWPAY_TRANSACTION_LOG.sql` | Invariato | Tabella log transazioni |
+| `004_CREATE_MYGOV_ENTE_CONFIG_PU.sql` | ✅ Nuovo | Nuova tabella config PU per-ente |
+| `005_DROP_MWPAY_ENTE_CONFIG.sql` | ✅ Nuovo | Rimozione vecchia tabella (eseguire in migrazione) |
+| `006_INSERT_ENTE_CONFIG_PU_EXAMPLE.sql` | ✅ Nuovo | Dati di esempio per dev |
+| `001_CREATE_MWPAY_ENTE_CONFIG.sql` | ❌ Rimosso | Sostituito da 004 + 005 |
+| `003_INSERT_ENTE_CONFIG_EXAMPLE.sql` | ❌ Rimosso | Sostituito da 006 |
+
+### Nuovo flusso (post refactoring)
+
+```
+SIL → POST /ws/pivot/...
+  → ReconciliationEndpoint
+    → estrae codIpaEnte dall'Header SOAP
+    → EnteCacheService.findByCodIpaEnte(codIpaEnte)
+      → query: mygov_ente LEFT JOIN mygov_ente_config_pu
+      → non trovato? → EnteNonCensitoException → SOAP Fault ENTE_NON_AUTORIZZATO
+    → PathRegistryConfig.resolveBackend(path) → MYPAY/MYPIVOT
+    → EnteCompleto.isPiattaformaUnitaria()?
+      → SÌ: PiattaformaUnitariaClient.forwardSoapRequest(path, xml, ente)
+        → OAuthTokenService.getAccessToken(codIpaEnte, clientId, clientSecret) [cache per-ente]
+      → NO: ProxyForwardingClient.forwardToLegacyBackend(dest, path, xml)
+```
+
+---
+
 ## Note Tecniche
 
 ### Compilazione (ambiente Windows/WSL)
@@ -773,9 +876,11 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn compile -pl mypay.m
 
 ### Esecuzione test
 
-```bash
-cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypaycore-springboot -am -Denforcer.skip=true"
-```
+> **Nota** (refactoring multi-ente, 24 Mar 2026): `mvn test` **non è più eseguibile**.
+> La directory `src/test/` e le dipendenze `spring-boot-starter-test` e `spring-ws-test`
+> sono state eliminate nel refactoring multi-ente. I 124 test JUnit 5 esistenti non esistono più.
+> Il testing avviene esclusivamente via collection Postman E2E:
+> `docs/procedures/GUIDA_TEST_POSTMAN_END_TO_END.md`.
 
 ### Vincoli noti
 
@@ -789,51 +894,58 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 | File di configurazione | Formato `.properties` (la migrazione da `.yml` è completata) |
 | Profilo attivo | Solo `dev` — i profili `uat` e `prod` vanno creati al momento del deploy |
 | Path SOAP | Il servlet SOAP è su `/ws/*` (aggiornato dalla Fase 5); espone i path identici ai backend originali |
+| Test Java | Eliminati nel refactoring multi-ente (24 Mar 2026) — `src/test/` rimossa, dipendenze test rimosse dal `pom.xml`. Testing via Postman E2E. |
+| Credenziali OAuth2 | Non più globali — ogni ente ha il proprio `client_id` e `client_secret` in `mygov_ente_config_pu` |
 
-### Struttura componenti (stato attuale post Fase 9)
+### Struttura componenti (stato attuale post Fase 10)
 
 ```
 it.ariaspa.mypay.mypaycore.api/
 ├── config/
-│   ├── PiattaformaUnitariaConfig.java     (✅ Fase 1)
+│   ├── PiattaformaUnitariaConfig.java     (✅ Fase 1 — senza clientId/clientSecret globali)
 │   ├── PathRegistryConfig.java            (✅ Fase 5 — mapping path-prefix → backend)
 │   ├── BackendRoutingConfig.java          (✅ Fase 5 — URL backend)
 │   ├── SoapWebServiceConfig.java          (✅ Fase 5 — servlet su /ws/*)
 │   ├── DataSourceConfiguration.java       (✅ Fase 3)
-│   └── JdbiConfiguration.java            (✅ Fase 3)
-├── auth/                                  (✅ Fase 1, invariato)
+│   └── JdbiConfiguration.java            (✅ Fase 3 — aggiornato Fase 10: nuovi RowMapper)
+├── auth/
+│   └── OAuthTokenService.java             (✅ Fase 10 — multi-ente: ConcurrentHashMap<codIpaEnte, TokenData>)
 ├── routing/
-│   ├── RoutingDecision.java               (✅ Fase 7 — risultato immutabile della decisione)
-│   └── RoutingDecisionService.java        (✅ Fase 7 — cervello del routing)
+│   ├── RoutingDecision.java               (✅ Fase 10 — aggiunto campo EnteCompleto)
+│   └── RoutingDecisionService.java        (✅ Fase 10 — firma: decide(codIpaEnte, pathRichiesta))
 ├── client/
-│   ├── PiattaformaUnitariaClient.java     (✅ Fase 1 — per modalità PU con OAuth2)
-│   └── ProxyForwardingClient.java         (✅ Fase 5 — per modalità legacy)
+│   ├── PiattaformaUnitariaClient.java     (✅ Fase 10 — firma: forwardSoapRequest(path, xml, ente))
+│   └── ProxyForwardingClient.java         (✅ Fase 5)
 ├── soap/
 │   ├── endpoint/
-│   │   └── ReconciliationEndpoint.java    (✅ Fase 9 — aggiornato con logging e metriche)
+│   │   └── ReconciliationEndpoint.java    (✅ Fase 10 — aggiornato con nuove firme)
 │   └── exception/
-│       └── SoapFaultExceptionResolver.java (✅ Fase 7 — 5 tipi di eccezione mappati)
+│       └── SoapFaultExceptionResolver.java (✅ Fase 10 — messaggio fault senza tipoOperazione)
 ├── domain/
 │   ├── ModalitaRouting.java               (✅ Fase 6)
-│   ├── EnteConfig.java                    (✅ Fase 6)
+│   ├── Ente.java                          (✅ Fase 10 — modello mygov_ente)
+│   ├── EnteConfigPu.java                  (✅ Fase 10 — modello mygov_ente_config_pu)
+│   ├── EnteCompleto.java                  (✅ Fase 10 — aggregato: Ente + EnteConfigPu)
 │   └── TransactionLog.java               (✅ Fase 6)
 ├── repository/
-│   ├── EnteConfigRepository.java          (✅ Fase 6)
-│   ├── EnteConfigRowMapper.java           (✅ Fase 6)
-│   ├── EnteConfigCacheService.java        (✅ Fase 6 — cache TTL in-memory)
+│   ├── EnteRepository.java                (✅ Fase 10 — DAO Jdbi per mygov_ente)
+│   ├── EnteRowMapper.java                 (✅ Fase 10)
+│   ├── EnteConfigPuRepository.java        (✅ Fase 10 — DAO Jdbi per mygov_ente_config_pu)
+│   ├── EnteConfigPuRowMapper.java         (✅ Fase 10)
+│   ├── EnteCacheService.java              (✅ Fase 10 — cache TTL ConcurrentHashMap<codIpaEnte, EnteCompleto>)
 │   ├── TransactionLogRepository.java      (✅ Fase 6)
 │   └── TransactionLogRowMapper.java       (✅ Fase 6)
 ├── common/exception/
 │   ├── PiattaformaAuthenticationException.java  (✅ Fase 1)
 │   ├── PiattaformaCommunicationException.java   (✅ Fase 2)
-│   ├── EnteNonCensitoException.java             (✅ Fase 7)
+│   ├── EnteNonCensitoException.java             (✅ Fase 10 — senza tipoOperazione)
 │   └── PathNonRiconosciutoException.java        (✅ Fase 7)
 ├── logging/
-│   └── TransactionLoggingService.java     (✅ Fase 9 — log su DB con resilienza)
+│   └── TransactionLoggingService.java     (✅ Fase 10 — firme senza tipoOperazione)
 ├── metrics/
-│   └── MiddlewareMetricsService.java      (✅ Fase 9 — Counter, Timer, Gauge Micrometer)
+│   └── MiddlewareMetricsService.java      (✅ Fase 10 — gauge enti.totali e enti.piattaforma.unitaria)
 └── health/
-    ├── OAuthTokenHealthIndicator.java            (✅ Fase 2)
+    ├── OAuthTokenHealthIndicator.java            (✅ Fase 10 — itera su tutti gli enti in cache)
     ├── PiattaformaUnitariaHealthIndicator.java   (✅ Fase 2)
-    └── EnteConfigHealthIndicator.java            (✅ Fase 9 — verifica enti configurati)
+    └── EnteConfigHealthIndicator.java            (✅ Fase 10 — usa EnteCacheService)
 ```
