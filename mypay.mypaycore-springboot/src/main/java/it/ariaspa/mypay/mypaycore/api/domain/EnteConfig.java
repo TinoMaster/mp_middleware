@@ -1,5 +1,8 @@
 package it.ariaspa.mypay.mypaycore.api.domain;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalDateTime;
 
 /**
@@ -19,6 +22,8 @@ import java.time.LocalDateTime;
  *
  * @see ModalitaRouting
  */
+@Setter
+@Getter
 public class EnteConfig {
 
     /** Identificativo univoco del record (chiave surrogata auto-generata). */
@@ -83,70 +88,6 @@ public class EnteConfig {
     }
 
     // --- Getter e Setter ---
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getCodIpaEnte() {
-        return codIpaEnte;
-    }
-
-    public void setCodIpaEnte(String codIpaEnte) {
-        this.codIpaEnte = codIpaEnte;
-    }
-
-    public String getTipoOperazione() {
-        return tipoOperazione;
-    }
-
-    public void setTipoOperazione(String tipoOperazione) {
-        this.tipoOperazione = tipoOperazione;
-    }
-
-    public ModalitaRouting getModalitaRouting() {
-        return modalitaRouting;
-    }
-
-    public void setModalitaRouting(ModalitaRouting modalitaRouting) {
-        this.modalitaRouting = modalitaRouting;
-    }
-
-    public boolean isAttivo() {
-        return attivo;
-    }
-
-    public void setAttivo(boolean attivo) {
-        this.attivo = attivo;
-    }
-
-    public String getNote() {
-        return note;
-    }
-
-    public void setNote(String note) {
-        this.note = note;
-    }
-
-    public LocalDateTime getDataCreazione() {
-        return dataCreazione;
-    }
-
-    public void setDataCreazione(LocalDateTime dataCreazione) {
-        this.dataCreazione = dataCreazione;
-    }
-
-    public LocalDateTime getDataAggiornamento() {
-        return dataAggiornamento;
-    }
-
-    public void setDataAggiornamento(LocalDateTime dataAggiornamento) {
-        this.dataAggiornamento = dataAggiornamento;
-    }
 
     @Override
     public String toString() {

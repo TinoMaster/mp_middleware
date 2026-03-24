@@ -2,6 +2,7 @@ package it.ariaspa.mypay.mypaycore.api.routing;
 
 import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
 import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
+import lombok.Getter;
 
 /**
  * Risultato della decisione di routing per una richiesta SOAP.
@@ -21,15 +22,31 @@ import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
  *
  * @see RoutingDecisionService
  */
+@Getter
 public class RoutingDecision {
 
-    /** Backend di destinazione (MYPAY o MYPIVOT). */
+    /** Backend di destinazione (MYPAY o MYPIVOT).
+     * -- GETTER --
+     *  Restituisce il backend di destinazione.
+     *
+     * @return il backend (MYPAY o MYPIVOT)
+     */
     private final BackendDestinatario destinazione;
 
-    /** Modalita di instradamento (PIATTAFORMA_UNITARIA o LEGACY). */
+    /** Modalita di instradamento (PIATTAFORMA_UNITARIA o LEGACY).
+     * -- GETTER --
+     *  Restituisce la modalita di instradamento.
+     *
+     * @return la modalita (PIATTAFORMA_UNITARIA o LEGACY)
+     */
     private final ModalitaRouting modalita;
 
-    /** URL base del backend di destinazione. */
+    /** URL base del backend di destinazione.
+     * -- GETTER --
+     *  Restituisce l'URL base del backend di destinazione.
+     *
+     * @return l'URL base del backend
+     */
     private final String urlBackend;
 
     /**
@@ -43,33 +60,6 @@ public class RoutingDecision {
         this.destinazione = destinazione;
         this.modalita = modalita;
         this.urlBackend = urlBackend;
-    }
-
-    /**
-     * Restituisce il backend di destinazione.
-     *
-     * @return il backend (MYPAY o MYPIVOT)
-     */
-    public BackendDestinatario getDestinazione() {
-        return destinazione;
-    }
-
-    /**
-     * Restituisce la modalita di instradamento.
-     *
-     * @return la modalita (PIATTAFORMA_UNITARIA o LEGACY)
-     */
-    public ModalitaRouting getModalita() {
-        return modalita;
-    }
-
-    /**
-     * Restituisce l'URL base del backend di destinazione.
-     *
-     * @return l'URL base del backend
-     */
-    public String getUrlBackend() {
-        return urlBackend;
     }
 
     /**
