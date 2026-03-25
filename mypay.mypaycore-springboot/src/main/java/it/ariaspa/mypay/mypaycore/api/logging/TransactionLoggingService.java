@@ -7,6 +7,7 @@ import it.ariaspa.mypay.mypaycore.api.routing.RoutingDecision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Servizio per il logging transazionale delle richieste SOAP processate dal middleware.
@@ -22,6 +23,10 @@ import org.springframework.stereotype.Service;
  *   <li>{@link #logErrore} — registra una transazione fallita con messaggio di errore</li>
  *   <li>{@link #logErrorePreRouting} — registra un errore avvenuto prima del routing</li>
  * </ul>
+ *
+ * <p>Ogni metodo pubblico e' annotato con {@code @Transactional(transactionManager = "tmPa")}
+ * per garantire il commit dell'INSERT anche con {@code autoCommit=false} sul pool HikariCP.
+ * Il try-catch interno assicura che eventuali errori DB non blocchino mai la risposta al SIL.
  *
  * <p>Informazioni registrate per ogni transazione:
  * <ul>
@@ -83,6 +88,7 @@ public class TransactionLoggingService {
      * @param httpStatus    codice HTTP della risposta dal backend (null se non disponibile)
      * @param durataMs      durata della transazione in millisecondi
      */
+    @Transactional(transactionManager = "tmPa")
     public void logSuccesso(String codIpaEnte, RoutingDecision decision,
                             String pathRichiesta, Integer httpStatus, long durataMs) {
         inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, decision.getModalita(),
@@ -107,6 +113,7 @@ public class TransactionLoggingService {
      * @param messaggioErrore messaggio di errore (senza dati sensibili)
      * @param durataMs        durata della transazione in millisecondi
      */
+    @Transactional(transactionManager = "tmPa")
     public void logErrore(String codIpaEnte, RoutingDecision decision,
                           String pathRichiesta, Integer httpStatus,
                           String messaggioErrore, long durataMs) {
@@ -130,6 +137,7 @@ public class TransactionLoggingService {
      * @param messaggioErrore messaggio di errore (senza dati sensibili)
      * @param durataMs        durata della transazione in millisecondi
      */
+    @Transactional(transactionManager = "tmPa")
     public void logErrorePreRouting(String codIpaEnte, String pathRichiesta,
                                     String messaggioErrore, long durataMs) {
         inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, null, null,
@@ -141,8 +149,8 @@ public class TransactionLoggingService {
      * Inserisce un record di log nella tabella {@code mygov_mw_transaction_log}.
      *
      * <p>Protetto da try-catch: qualsiasi errore di DB viene catturato e loggato
-     * come warning senza propagazione. Questo garantisce che il logging non
-     * interferisca mai con la risposta al SIL.
+     * come warning (con stack trace completo) senza propagazione. Questo garantisce
+     * che il logging non interferisca mai con la risposta al SIL.
      */
     private void inserisciLog(String codIpaEnte, String tipoOperazione,
                                ModalitaRouting modalita, BackendDestinatario destinazione,
@@ -169,11 +177,12 @@ public class TransactionLoggingService {
                     codIpaEnte, modalitaStr, destinazioneStr, esito, durataMs);
 
         } catch (Exception e) {
-            // Non bloccare MAI la risposta al SIL per un errore di logging
+            // Non bloccare MAI la risposta al SIL per un errore di logging.
+            // Il quinto argomento 'e' stampa lo stack trace completo nei log.
             log.warn("Errore durante l'inserimento del log transazionale — la risposta "
                             + "al SIL non viene bloccata. Dettagli: ente='{}', "
                             + "esito={}, errore='{}'",
-                    codIpaEnte, esito, e.getMessage());
+                    codIpaEnte, esito, e.getMessage(), e);
         }
     }
 
