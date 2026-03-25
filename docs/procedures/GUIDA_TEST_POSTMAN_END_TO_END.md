@@ -98,6 +98,21 @@ La collection contiene le seguenti cartelle:
 | **Flusso Principale** | Richiesta SOAP `pivotSILAutorizzaImportFlussoTesoreria` |
 | **Test Diretti PU** | Chiamate dirette alla PU (per debug) |
 
+### 4.1 Configurazione delle variabili SIL
+
+Tutte le credenziali dell'ente SIL di test sono parametrizzate tramite variabili della collection.
+Prima di eseguire i test, aprire la collection in Postman (tab **Variables**) e impostare:
+
+| Variabile | Valore predefinito | Descrizione |
+|-----------|-------------------|-------------|
+| `baseUrl` | `http://localhost:8080` | URL base del middleware |
+| `silCodIpaEnte` | `SELC_99999000013` | Codice IPA dell'ente SIL di test |
+| `silIdentificativoDominio` | `99999000013` | Codice fiscale dell'ente SIL (usato nei body CCP25 e MyPay) |
+| `silPassword` | `TEST_PASSWORD` | Password SIL di test (campo `<password>` nel body SOAP) |
+
+> Per testare un ente diverso, è sufficiente aggiornare queste variabili — le 48 richieste
+> della collection le useranno automaticamente senza alcuna modifica manuale.
+
 ---
 
 ## 5. Esecuzione del test step-by-step
@@ -215,7 +230,9 @@ Quando si invia la richiesta SOAP dallo Step 2, il middleware esegue internament
        ↓
 4. PiattaformaUnitariaClient.forwardSoapRequest() prepara la richiesta verso PU
        ↓
-5. OAuthTokenInterceptor aggiunge automaticamente "Authorization: Bearer <token>"
+5. OAuthTokenService.getAccessToken(codIpaEnte, clientId, clientSecret) viene invocato:
+       se token assente o scaduto → richiede un nuovo token alla PU
+       se token in cache valido  → utilizza quello esistente
        ↓
 6. (Se token assente o scaduto) OAuthTokenService richiede un nuovo token:
    POST https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token

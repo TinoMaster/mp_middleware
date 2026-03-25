@@ -1624,6 +1624,20 @@ La collection `requests/MyPay-Middleware-Dev.postman_collection.json` contiene:
 - Include scenari di errore (ente non censito, path non riconosciuto)
 - Health check e metriche Actuator
 
+#### Variabili della collection
+
+Tutte le variabili sono configurabili direttamente in Postman (tab "Variables" della collection).
+
+| Variabile | Valore di default | Descrizione |
+|-----------|-------------------|-------------|
+| `baseUrl` | `http://localhost:8080` | URL base del middleware |
+| `silCodIpaEnte` | `SELC_99999000013` | Codice IPA dell'ente SIL di test |
+| `silIdentificativoDominio` | `99999000013` | Codice fiscale dell'ente SIL di test (usato nei body CCP25/MyPay) |
+| `silPassword` | `TEST_PASSWORD` | Password SIL di test (campo `<password>` nel body SOAP) |
+
+> Per eseguire i test su un ente diverso, è sufficiente modificare queste tre variabili nella
+> collection senza toccare le singole richieste.
+
 Per i dettagli sui test E2E, vedere `docs/procedures/GUIDA_TEST_POSTMAN_END_TO_END.md`.
 
 ---

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "mypay-middleware-dev-fase8",
     "name": "MyPay Middleware — Test Completo Fase 8 (tutti gli endpoint SOAP)",
-    "description": "Collection completa Fase 8 per testare TUTTI i 40 endpoint SOAP MyPay + gli endpoint MyPivot attraverso il middleware.\n\nIl middleware si interpone tra i SIL (Sistemi Informativi Locali) e la Piattaforma Unitaria di pagoPA:\n- Riceve richieste SOAP dai SIL su localhost:8080\n- Gestisce autonomamente l'autenticazione OAuth2 verso la PU\n- Inoltra le richieste autenticate e restituisce le risposte\n\nIl SOAP servlet è mappato su /ws/* e Spring WS esegue il dispatch basandosi su namespace+localPart.\n\nEndpoint:\n- /ws/pa → operazioni MyPay PA (DovutiPagati, CCPPa, Esito, FlussiSPC)\n- /ws/fesp → operazioni MyPay FESP (CCP, CCP25, RT, RP, AvvisiDigitali)\n- /ws/pivot → operazioni MyPivot (Riconciliazione)\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo\n\nValori di test:\n- codIpaEnte: SELC_99999000013\n- identificativoDominio: 99999000013",
+    "description": "Collection completa Fase 8 per testare TUTTI i 40 endpoint SOAP MyPay + gli endpoint MyPivot attraverso il middleware.\n\nIl middleware si interpone tra i SIL (Sistemi Informativi Locali) e la Piattaforma Unitaria di pagoPA:\n- Riceve richieste SOAP dai SIL su localhost:8080\n- Gestisce autonomamente l'autenticazione OAuth2 verso la PU\n- Inoltra le richieste autenticate e restituisce le risposte\n\nIl SOAP servlet è mappato su /ws/* e Spring WS esegue il dispatch basandosi su namespace+localPart.\n\nEndpoint:\n- /ws/pa → operazioni MyPay PA (DovutiPagati, CCPPa, Esito, FlussiSPC)\n- /ws/fesp → operazioni MyPay FESP (CCP, CCP25, RT, RP, AvvisiDigitali)\n- /ws/pivot → operazioni MyPivot (Riconciliazione)\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo\n\nValori di test:\n- codIpaEnte: {{silCodIpaEnte}}\n- identificativoDominio: {{silIdentificativoDominio}}",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,6 +10,24 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "type": "string"
+    },
+    {
+      "key": "silCodIpaEnte",
+      "value": "{{silCodIpaEnte}}",
+      "type": "string",
+      "description": "Codice IPA dell'ente SIL da testare. Usato nell'header SOAP <codIpaEnte> e nei body che non hanno header."
+    },
+    {
+      "key": "silIdentificativoDominio",
+      "value": "{{silIdentificativoDominio}}",
+      "type": "string",
+      "description": "Codice fiscale dell'ente SIL (identificativoDominio). Usato nell'header SOAP <identificativoDominio> e nei campi <idPA>, <fiscalCode> dei messaggi CCP25."
+    },
+    {
+      "key": "silPassword",
+      "value": "",
+      "type": "string",
+      "description": "Password del SIL per l'autenticazione. Usata nel body SOAP nel campo <password>. Lasciare vuoto e impostare prima di eseguire i test."
     },
     {
       "key": "puClientSecret",
@@ -127,7 +145,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>{{silPassword}}</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -137,7 +155,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
             },
-            "description": "Richiesta di autorizzazione per importare un flusso di tesoreria OPI (tipoFlusso=O).\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: SELC_99999000013\n- password: BERGAMO\n- tipoFlusso: O (Ordinativi di Pagamento e Incasso)"
+            "description": "Richiesta di autorizzazione per importare un flusso di tesoreria OPI (tipoFlusso=O).\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}}\n- password: {{silPassword}}\n- tipoFlusso: O (Ordinativi di Pagamento e Incasso)"
           }
         },
         {
@@ -182,7 +200,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>F</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>{{silPassword}}</password>\n            <tipoFlusso>F</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -239,7 +257,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILImportaDovuto>\n            <password>TEST_PASSWORD</password>\n            <dovuto>TEST_DOVUTO_BASE64</dovuto>\n        </ente:paaSILImportaDovuto>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILImportaDovuto>\n            <password>{{silPassword}}</password>\n            <dovuto>TEST_DOVUTO_BASE64</dovuto>\n        </ente:paaSILImportaDovuto>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -290,7 +308,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILAutorizzaImportFlusso>\n            <password>TEST_PASSWORD</password>\n        </ente:paaSILAutorizzaImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILAutorizzaImportFlusso>\n            <password>{{silPassword}}</password>\n        </ente:paaSILAutorizzaImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -341,7 +359,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediEsitoCarrelloDovuti>\n            <password>TEST_PASSWORD</password>\n            <idCarrello>TEST_CARRELLO_ID</idCarrello>\n        </ente:paaSILChiediEsitoCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediEsitoCarrelloDovuti>\n            <password>{{silPassword}}</password>\n            <idCarrello>TEST_CARRELLO_ID</idCarrello>\n        </ente:paaSILChiediEsitoCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -392,7 +410,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagati>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagati>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagati>\n            <password>{{silPassword}}</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagati>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -443,7 +461,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagatiConRicevuta>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagatiConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagatiConRicevuta>\n            <password>{{silPassword}}</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagatiConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -494,7 +512,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPosizioniAperte>\n            <password>TEST_PASSWORD</password>\n            <codiceFiscaleDebitore>RSSMRA80A01H501U</codiceFiscaleDebitore>\n        </ente:paaSILChiediPosizioniAperte>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPosizioniAperte>\n            <password>{{silPassword}}</password>\n            <codiceFiscaleDebitore>RSSMRA80A01H501U</codiceFiscaleDebitore>\n        </ente:paaSILChiediPosizioniAperte>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -545,7 +563,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoExportFlusso>\n            <password>TEST_PASSWORD</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoExportFlusso>\n            <password>{{silPassword}}</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -596,7 +614,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoImportFlusso>\n            <password>TEST_PASSWORD</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoImportFlusso>\n            <password>{{silPassword}}</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -647,7 +665,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStoricoPagamenti>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediStoricoPagamenti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStoricoPagamenti>\n            <password>{{silPassword}}</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediStoricoPagamenti>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -698,7 +716,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaDovuti>\n            <password>TEST_PASSWORD</password>\n            <dovuti>TEST_DOVUTI_BASE64</dovuti>\n        </ente:paaSILInviaDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaDovuti>\n            <password>{{silPassword}}</password>\n            <dovuti>TEST_DOVUTI_BASE64</dovuti>\n        </ente:paaSILInviaDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -749,7 +767,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaCarrelloDovuti>\n            <password>TEST_PASSWORD</password>\n            <carrello>TEST_CARRELLO_BASE64</carrello>\n        </ente:paaSILInviaCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaCarrelloDovuti>\n            <password>{{silPassword}}</password>\n            <carrello>TEST_CARRELLO_BASE64</carrello>\n        </ente:paaSILInviaCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -800,7 +818,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlusso>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlusso>\n            <password>{{silPassword}}</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -851,7 +869,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n            <password>{{silPassword}}</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -902,7 +920,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRegistraPagamento>\n            <password>TEST_PASSWORD</password>\n            <importoPagato>100.00</importoPagato>\n        </ente:paaSILRegistraPagamento>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRegistraPagamento>\n            <password>{{silPassword}}</password>\n            <importoPagato>100.00</importoPagato>\n        </ente:paaSILRegistraPagamento>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -953,7 +971,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILVerificaAvviso>\n            <password>TEST_PASSWORD</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILVerificaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILVerificaAvviso>\n            <password>{{silPassword}}</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILVerificaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1004,7 +1022,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRecuperaAvviso>\n            <password>TEST_PASSWORD</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILRecuperaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRecuperaAvviso>\n            <password>{{silPassword}}</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILRecuperaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1061,7 +1079,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILAttivaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILAttivaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILAttivaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILAttivaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1112,7 +1130,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILVerificaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILVerificaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILVerificaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILVerificaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1163,7 +1181,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paVerifyPaymentNotice>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paVerifyPaymentNotice>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paVerifyPaymentNotice>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paVerifyPaymentNotice>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1214,7 +1232,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paGetPayment>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paGetPayment>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paGetPayment>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paGetPayment>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1271,7 +1289,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILInviaEsito>\n            <esito>OK</esito>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILInviaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILInviaEsito>\n            <esito>OK</esito>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILInviaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1328,7 +1346,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediFlussoSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </pa:paaSILChiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediFlussoSPC>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </pa:paaSILChiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1379,7 +1397,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediElencoFlussiSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n        </pa:paaSILChiediElencoFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediElencoFlussiSPC>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n        </pa:paaSILChiediElencoFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1436,7 +1454,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaVerificaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n        </ws:paaVerificaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaVerificaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n        </ws:paaVerificaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1487,7 +1505,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaAttivaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <datiPagamentoPSP>TEST_DATI</datiPagamentoPSP>\n        </ws:paaAttivaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaAttivaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <datiPagamentoPSP>TEST_DATI</datiPagamentoPSP>\n        </ws:paaAttivaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1544,7 +1562,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paVerifyPaymentNoticeReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paVerifyPaymentNoticeReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paVerifyPaymentNoticeReq>\n            <idPA>{{silIdentificativoDominio}}</idPA>\n            <idBrokerPA>{{silIdentificativoDominio}}</idBrokerPA>\n            <idStation>{{silIdentificativoDominio}}_01</idStation>\n            <qrCode>\n                <fiscalCode>{{silIdentificativoDominio}}</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paVerifyPaymentNoticeReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1595,7 +1613,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentReq>\n            <idPA>{{silIdentificativoDominio}}</idPA>\n            <idBrokerPA>{{silIdentificativoDominio}}</idBrokerPA>\n            <idStation>{{silIdentificativoDominio}}_01</idStation>\n            <qrCode>\n                <fiscalCode>{{silIdentificativoDominio}}</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1646,7 +1664,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <receipt>TEST_RECEIPT_BASE64</receipt>\n        </paf:paSendRTReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTReq>\n            <idPA>{{silIdentificativoDominio}}</idPA>\n            <idBrokerPA>{{silIdentificativoDominio}}</idBrokerPA>\n            <idStation>{{silIdentificativoDominio}}_01</idStation>\n            <receipt>TEST_RECEIPT_BASE64</receipt>\n        </paf:paSendRTReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1697,7 +1715,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTV2Request>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <receipt>TEST_RECEIPT_V2_BASE64</receipt>\n        </paf:paSendRTV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTV2Request>\n            <idPA>{{silIdentificativoDominio}}</idPA>\n            <idBrokerPA>{{silIdentificativoDominio}}</idBrokerPA>\n            <idStation>{{silIdentificativoDominio}}_01</idStation>\n            <receipt>TEST_RECEIPT_V2_BASE64</receipt>\n        </paf:paSendRTV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1748,7 +1766,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentV2Request>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentV2Request>\n            <idPA>{{silIdentificativoDominio}}</idPA>\n            <idBrokerPA>{{silIdentificativoDominio}}</idBrokerPA>\n            <idStation>{{silIdentificativoDominio}}_01</idStation>\n            <qrCode>\n                <fiscalCode>{{silIdentificativoDominio}}</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1805,7 +1823,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaInviaRT>\n            <tipoFirma>0</tipoFirma>\n            <rt>TEST_RT_BASE64</rt>\n        </ws:paaInviaRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaInviaRT>\n            <tipoFirma>0</tipoFirma>\n            <rt>TEST_RT_BASE64</rt>\n        </ws:paaInviaRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1862,7 +1880,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </nrf:chiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPC>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </nrf:chiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1913,7 +1931,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPCPage>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n            <pageNumber>0</pageNumber>\n            <pageSize>100</pageSize>\n        </nrf:chiediFlussoSPCPage>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPCPage>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n            <pageNumber>0</pageNumber>\n            <pageSize>100</pageSize>\n        </nrf:chiediFlussoSPCPage>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -1964,7 +1982,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediListaFlussiSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n        </nrf:chiediListaFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediListaFlussiSPC>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n        </nrf:chiediListaFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2015,7 +2033,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediCopiaEsito>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </nrf:nodoSILChiediCopiaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediCopiaEsito>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </nrf:nodoSILChiediCopiaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2066,7 +2084,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/ppthead\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <nrf:nodoSILInviaRP>\n            <password>TEST_PASSWORD</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <tipoFirma>0</tipoFirma>\n            <rp>TEST_RP_BASE64</rp>\n        </nrf:nodoSILInviaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/ppthead\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>{{silIdentificativoDominio}}</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <nrf:nodoSILInviaRP>\n            <password>{{silPassword}}</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <tipoFirma>0</tipoFirma>\n            <rp>TEST_RP_BASE64</rp>\n        </nrf:nodoSILInviaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2117,7 +2135,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediIUV>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <tipoVersamento>ALL</tipoVersamento>\n            <tipoGeneratore>0</tipoGeneratore>\n        </nrf:nodoSILChiediIUV>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediIUV>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <tipoVersamento>ALL</tipoVersamento>\n            <tipoGeneratore>0</tipoGeneratore>\n        </nrf:nodoSILChiediIUV>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2168,7 +2186,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaCarrelloRP>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <listaRP>TEST_LISTA_RP_BASE64</listaRP>\n        </nrf:nodoSILInviaCarrelloRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaCarrelloRP>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <listaRP>TEST_LISTA_RP_BASE64</listaRP>\n        </nrf:nodoSILInviaCarrelloRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2219,7 +2237,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILRichiediRT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </nrf:nodoSILRichiediRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILRichiediRT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </nrf:nodoSILRichiediRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2276,7 +2294,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaAvvisoDigitale>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <avvisoDigitale>TEST_AVVISO_BASE64</avvisoDigitale>\n        </nrf:nodoSILInviaAvvisoDigitale>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaAvvisoDigitale>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <avvisoDigitale>TEST_AVVISO_BASE64</avvisoDigitale>\n        </nrf:nodoSILInviaAvvisoDigitale>\n    </soapenv:Body>\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
@@ -2333,12 +2351,12 @@
               "urlencoded": []
             },
             "url": {
-              "raw": "https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token?client_id=SELC_99999000013SIL_RegLomb2&client_secret={{puClientSecret}}&grant_type=client_credentials&scope=openid",
+              "raw": "https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token?client_id={{silCodIpaEnte}}SIL_RegLomb2&client_secret={{puClientSecret}}&grant_type=client_credentials&scope=openid",
               "protocol": "https",
               "host": ["api", "uat", "p4pa", "pagopa", "it"],
               "path": ["pu", "auth", "oauth", "token"],
               "query": [
-                {"key": "client_id", "value": "SELC_99999000013SIL_RegLomb2"},
+                {"key": "client_id", "value": "{{silCodIpaEnte}}SIL_RegLomb2"},
                 {"key": "client_secret", "value": "{{puClientSecret}}"},
                 {"key": "grant_type", "value": "client_credentials"},
                 {"key": "scope", "value": "openid"}
@@ -2363,7 +2381,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>BERGAMO</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoTesoreria>\n            <password>{{silPassword}}</password>\n            <tipoFlusso>O</tipoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
               "options": {
                 "raw": {"language": "xml"}
               }
