@@ -60,7 +60,7 @@ MIDDLEWARE
 | Fase 5 | ✅ Completata | Registro path-prefix, configurazione backend, ProxyForwardingClient |
 | Fase 6 | ✅ Completata | Schema DB: tabella configurazione enti e routing |
 | Fase 7 | ✅ Completata | Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint |
-| Fase 8 | ⬜ Da fare (bloccata) | Endpoint SOAP completi — richiede censimento endpoint dai team backend |
+| Fase 8 | ✅ Completata | Endpoint SOAP completi — 9 gruppi MyPay (40 operazioni) + refactoring base class |
 | Fase 9 | ✅ Completata | Log transazionale, audit, metriche |
 | Fase 10 | ✅ Completata | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
 
@@ -427,7 +427,7 @@ Non esiste migrazione automatica. Un ente non presente equivale a ente non censi
 ### 6.2 Tabella `MWPAY_TRANSACTION_LOG` (log transazioni)
 
 ```sql
-CREATE TABLE mwpay_transaction_log (
+CREATE TABLE mygov_mw_transaction_log (
     id                   BIGSERIAL PRIMARY KEY,
     cod_ipa_ente         VARCHAR(50)  NOT NULL,
     tipo_operazione      VARCHAR(100) NOT NULL,
@@ -446,7 +446,7 @@ CREATE TABLE mwpay_transaction_log (
 
 **File da creare** (in `it.ariaspa.mypay.mypaycore.api`):
 - `domain/EnteConfig.java` — modello Java tabella `mwpay_ente_config`
-- `domain/TransactionLog.java` — modello Java tabella `mwpay_transaction_log`
+- `domain/TransactionLog.java` — modello Java tabella `mygov_mw_transaction_log`
 - `repository/EnteConfigRepository.java` — DAO Jdbi (`@SqlQuery`, `@SqlUpdate`)
 - `repository/TransactionLogRepository.java` — DAO Jdbi
 
@@ -593,57 +593,115 @@ Refactoring completo per integrare il routing dinamico:
 
 ---
 
-## Fase 8 - Endpoint SOAP Completi ⬜
+## Fase 8 - Endpoint SOAP Completi (MyPay) ✅
 
-**Obiettivo**: Aggiungere tutti gli endpoint SOAP necessari — sia quelli mypivot (`/ws/pivot/*`)
-che quelli mypay (`/ws/pa/*`, `/ws/fesp/*`) — replicando i path esistenti nei backend originali.
+**Data**: 25 Marzo 2026
+**Risultato**: `mvn compile` → BUILD SUCCESS (52 source files, 0 errori)
 
-**Prerequisiti**: Fase 5 (path stabili) + Fase 7 (routing operativo).
+**Obiettivo**: Creare tutti gli endpoint SOAP di MyPay4 (9 gruppi, 40 operazioni) come proxy
+trasparente, con classe base astratta, cache duale per identificazione ente, e allineamento DB.
 
-### 8.1 Censimento endpoint
+**Prerequisiti**: Fase 5 (path stabili) + Fase 7 (routing operativo) + Fase 10 (multi-ente).
 
-Prima di implementare, è necessario identificare la lista completa degli endpoint:
+### 8.1 Allineamento Database ✅
 
-| Backend | Path pattern | Operazioni richieste | Stato |
-|---------|-------------|---------------------|-------|
-| mypivot | `/ws/pivot/PagamentiTelematiciPagatiRiconciliati` | `pivotSILAutorizzaImportFlussoTesoreria` | Prototipo in Fase 1 |
-| mypivot | `/ws/pivot/*` | TBD | Da censire |
-| mypay | `/ws/pa/PagamentiTelematiciCCPPa` | TBD | Da censire |
-| mypay | `/ws/pa/*` | TBD | Da censire |
-| mypay | `/ws/fesp/*` | TBD | Da censire |
+- **`007_ALTER_MYGOV_ENTE_CONFIG_PU.sql`** — rinomina colonne (`mygov_ente_config_pu_id` → `id`,
+  `cod_ipa_ente` → `codice_ipa_ente`, `secret` → `client_secret`), aggiunge colonne mancanti
+  (`attivo`, `dt_creazione`, `dt_ultima_modifica`), vincolo unicita' e indice
+- **`002_CREATE_MWPAY_TRANSACTION_LOG.sql`** — aggiunto `'SCONOSCIUTA'` ai vincoli CHECK su
+  `modalita_routing` e `destinazione` per supportare errori pre-routing
 
-> **Azione richiesta**: richiedere ai team mypay e mypivot la lista completa degli endpoint
-> SOAP esposti ai SIL (path, namespace, local part, struttura messaggi).
+> **Nota**: gli script sono pronti ma devono essere eseguiti manualmente sul DB di sviluppo.
+> La connessione MCP è read-only.
 
-### 8.2 Strategia di implementazione
+### 8.2 Modello di Dominio e Cache Duale ✅
 
-**Approccio consigliato**: mantenere l'approccio **contract-last** (attuale) per la semplicità,
-con possibile migrazione a contract-first in futuro se i WSDL diventano disponibili.
+- **`Ente.java`** — aggiunto campo `codiceFiscaleEnte`
+- **`EnteRowMapper.java`** — aggiunto mapping `codice_fiscale_ente`
+- **`EnteRepository.java`** — aggiunto metodo `findByCodiceFiscale()`, aggiornate SELECT
+- **`EnteCacheService.java`** — refactoring con cache duale:
+  - `cacheByCodIpa` — lookup per codice IPA (esistente)
+  - `cacheByCodiceFiscale` — lookup per codice fiscale (nuovo)
+  - Metodo `findByCodiceFiscale()` per risolvere `identificativoDominio` → `codIpaEnte`
+  - `refreshCache()` popola entrambe le mappe
 
-Ogni endpoint sarà un `@Endpoint` Spring WS con:
-- Namespace e local part corretti
-- Protezione XXE (`DocumentBuilderFactory` hardened)
-- Delega a `RoutingDecisionService` per il routing
+### 8.3 Classe Base `AbstractSoapProxyEndpoint` ✅
 
-### 8.3 Struttura pacchetti aggiornata
+**File creato**: `soap/endpoint/AbstractSoapProxyEndpoint.java`
 
-```
-soap/
-├── endpoint/
-│   ├── mypivot/
-│   │   ├── ReconciliationEndpoint.java      (già presente, da aggiornare)
-│   │   └── [altri endpoint mypivot]
-│   └── mypay/
-│       └── [endpoint mypay — /ws/pa/* e /ws/fesp/*]
-└── exception/
-    └── SoapFaultExceptionResolver.java
-```
+Classe astratta che contiene tutta la logica comune di proxy SOAP:
+- `processRequest()` — flusso principale: extract ente → routing → forward → logging/metriche
+- `extractEnteIdentifier()` — ricerca generica: prima `<codIpaEnte>`, poi `<identificativoDominio>`
+  (codice fiscale risolto a codIpaEnte tramite `EnteCacheService.findByCodiceFiscale()`)
+- `extractFullSoapEnvelope()` — estrae l'Envelope completo dal `MessageContext`
+- `extractRequestPath()` — recupera il path HTTP dal `TransportContextHolder`
+- `extractBodyContent()` — estrae il body dalla risposta SOAP della PU
+- Factory XML XXE-safe (`DocumentBuilderFactory`, `TransformerFactory`)
+- Metodo astratto `getDefaultPath()` per il path di fallback
 
-### Decisioni da prendere
+### 8.4 Refactoring ReconciliationEndpoint ✅
 
-- Lista completa degli endpoint (TBD — da ricevere dai team mypay/mypivot)
-- Migrazione contract-last → contract-first (WSDL/XSD) ora o in futuro?
-- Validazione XML Schema sulle richieste in ingresso (opzionale ma raccomandato)
+- `ReconciliationEndpoint` spostato in `soap/endpoint/mypivot/` ed estende `AbstractSoapProxyEndpoint`
+- Vecchio file in `soap/endpoint/ReconciliationEndpoint.java` **eliminato**
+- Logica duplicata rimossa — tutto delegato alla classe base
+
+### 8.5 Endpoint MyPay (9 gruppi, 40 operazioni) ✅
+
+| # | Classe Endpoint | Package | Ops | Namespace | Path PU |
+|---|----------------|---------|-----|-----------|---------|
+| D.1 | `PagamentiTelematiciDovutiPagatiEndpoint` | `mypay/` | 16 | `regione.veneto.it/pagamenti/ente/` | `/pu/sil/soap/pa/PagamentiTelematiciDovutiPagati` |
+| D.2 | `PagamentiTelematiciCCPPaEndpoint` | `mypay/` | 4 | `regione.veneto.it/pagamenti/pa/` | `/pu/sil/soap/pa/PagamentiTelematiciCCPPa` |
+| D.3 | `PagamentiTelematiciEsitoEndpoint` | `mypay/` | 1 | `regione.veneto.it/pagamenti/pa/` | `/pu/sil/soap/pa/PagamentiTelematiciEsito` |
+| D.4 | `PagamentiTelematiciFlussiSPCEndpoint` | `mypay/` | 2 | `regione.veneto.it/pagamenti/pa/` | `/pu/sil/soap/pa/PagamentiTelematiciFlussiSPC` |
+| D.5 | `PagamentiTelematiciCCPEndpoint` | `mypay/fesp/` | 2 | `ws.pagamenti.telematici.gov/` | `/pu/sil/soap/fesp/PagamentiTelematiciCCP` |
+| D.6 | `PagamentiTelematiciCCP25Endpoint` | `mypay/fesp/` | 5 | `pagopa-api.pagopa.gov.it/pa/paForNode.xsd` | `/pu/sil/soap/fesp/PagamentiTelematiciCCP25` |
+| D.7 | `PagamentiTelematiciRTEndpoint` | `mypay/fesp/` | 1 | `ws.pagamenti.telematici.gov/` | `/pu/sil/soap/fesp/PagamentiTelematiciRT` |
+| D.8 | `PagamentiTelematiciRPEndpoint` | `mypay/fesp/` | 8 | `regione.veneto.it/pagamenti/nodoregionalefesp/` | `/pu/sil/soap/fesp/PagamentiTelematiciRP` |
+| D.9 | `PagamentiTelematiciAvvisiDigitaliEndpoint` | `mypay/fesp/` | 1 | `regione.veneto.it/pagamenti/nodoregionalefesp/` | `/pu/sil/soap/fesp/PagamentiTelematiciAvvisiDigitali` |
+
+### 8.6 Collection Postman ✅
+
+**File**: `requests/MyPay-Middleware-Dev.postman_collection.json`
+
+Collection Postman v2.1.0 con **48 richieste** totali:
+
+| Cartella | Richieste | Descrizione |
+|----------|-----------|-------------|
+| 1. Diagnostica | 4 | Health check (completo, token, PU, DB) |
+| 2. MyPivot — Riconciliazione | 2 | Tipo O e Tipo F |
+| 3-11. MyPay (9 cartelle) | 40 | Tutte le 40 operazioni SOAP |
+| 12. Test Diretti PU | 2 | Token OAuth2 + chiamata diretta PU |
+
+Ogni richiesta SOAP include test script JavaScript che verifica: HTTP 200, Content-Type text/xml,
+presenza SOAP Envelope nella risposta.
+
+### 8.7 Compilazione e Finalizzazione ✅
+
+- `mvn compile` → **BUILD SUCCESS** (52 source files, 0 errori, 10.6s)
+- Script SQL allineati al codice Java (da eseguire manualmente sul DB)
+- `Plan.md` e `DOCUMENTAZIONE_TECNICA.md` aggiornati
+
+### Attivita' Fase 8 — Riepilogo
+
+| # | Attivita' | File | Stato |
+|---|---------|------|-------|
+| 8.1a | ALTER TABLE `mygov_ente_config_pu` | `007_ALTER_MYGOV_ENTE_CONFIG_PU.sql` (nuovo) | ✅ |
+| 8.1b | UPDATE `mygov_mw_transaction_log` CHECK | `002_CREATE_MWPAY_TRANSACTION_LOG.sql` (aggiornato) | ✅ |
+| 8.2a | `codiceFiscaleEnte` in modello | `Ente.java`, `EnteRowMapper.java`, `EnteRepository.java` | ✅ |
+| 8.2b | Cache duale `EnteCacheService` | `EnteCacheService.java` | ✅ |
+| 8.3 | `AbstractSoapProxyEndpoint` | `soap/endpoint/AbstractSoapProxyEndpoint.java` (nuovo) | ✅ |
+| 8.4 | Refactoring `ReconciliationEndpoint` | `soap/endpoint/mypivot/ReconciliationEndpoint.java` (nuovo, vecchio eliminato) | ✅ |
+| 8.5 | 9 endpoint MyPay (40 operazioni) | 9 classi Java in `soap/endpoint/mypay/` e `soap/endpoint/mypay/fesp/` | ✅ |
+| 8.6 | Collection Postman (48 richieste) | `requests/MyPay-Middleware-Dev.postman_collection.json` | ✅ |
+| 8.7 | BUILD SUCCESS + documentazione | 52 source files, 0 errori | ✅ |
+
+### Decisioni confermate
+
+- ✅ Un `@Endpoint` per gruppo di operazioni (non generico) — 9 classi MyPay + 1 MyPivot
+- ✅ Identificazione ente con ricerca generica: `<codIpaEnte>` poi `<identificativoDominio>` (CF → IPA via cache duale)
+- ✅ Classe base astratta per eliminare duplicazione (routing, logging, metriche, XXE safety)
+- ✅ Path esposti al SIL identici ai backend originali (`/ws/pa/*`, `/ws/fesp/*`, `/ws/pivot/*`)
+- ✅ Script SQL 007 per allineamento DB (da eseguire manualmente — connessione MCP read-only)
 
 ---
 
@@ -661,7 +719,7 @@ ogni errore registrato, metriche per operazione e per ente.
 
 **File creato**: `logging/TransactionLoggingService.java`
 
-Servizio `@Service` che scrive un record in `mwpay_transaction_log` per ogni richiesta SOAP
+Servizio `@Service` che scrive un record in `mygov_mw_transaction_log` per ogni richiesta SOAP
 processata dal middleware. Tre metodi principali:
 
 - `logSuccesso(codIpaEnte, tipoOperazione, decision, pathRichiesta, httpStatus, durataMs)` —
@@ -897,7 +955,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn compile -pl mypay.m
 | Test Java | Eliminati nel refactoring multi-ente (24 Mar 2026) — `src/test/` rimossa, dipendenze test rimosse dal `pom.xml`. Testing via Postman E2E. |
 | Credenziali OAuth2 | Non più globali — ogni ente ha il proprio `client_id` e `client_secret` in `mygov_ente_config_pu` |
 
-### Struttura componenti (stato attuale post Fase 10)
+### Struttura componenti (stato attuale post Fase 8)
 
 ```
 it.ariaspa.mypay.mypaycore.api/
@@ -918,21 +976,34 @@ it.ariaspa.mypay.mypaycore.api/
 │   └── ProxyForwardingClient.java         (✅ Fase 5)
 ├── soap/
 │   ├── endpoint/
-│   │   └── ReconciliationEndpoint.java    (✅ Fase 10 — aggiornato con nuove firme)
+│   │   ├── AbstractSoapProxyEndpoint.java (✅ Fase 8 — classe base astratta per tutti gli endpoint proxy)
+│   │   ├── mypivot/
+│   │   │   └── ReconciliationEndpoint.java (✅ Fase 8 — spostato da soap/endpoint/, estende base class)
+│   │   └── mypay/
+│   │       ├── PagamentiTelematiciDovutiPagatiEndpoint.java  (✅ Fase 8 — 16 operazioni)
+│   │       ├── PagamentiTelematiciCCPPaEndpoint.java         (✅ Fase 8 — 4 operazioni)
+│   │       ├── PagamentiTelematiciEsitoEndpoint.java         (✅ Fase 8 — 1 operazione)
+│   │       ├── PagamentiTelematiciFlussiSPCEndpoint.java     (✅ Fase 8 — 2 operazioni)
+│   │       └── fesp/
+│   │           ├── PagamentiTelematiciCCPEndpoint.java       (✅ Fase 8 — 2 operazioni)
+│   │           ├── PagamentiTelematiciCCP25Endpoint.java     (✅ Fase 8 — 5 operazioni)
+│   │           ├── PagamentiTelematiciRTEndpoint.java        (✅ Fase 8 — 1 operazione)
+│   │           ├── PagamentiTelematiciRPEndpoint.java        (✅ Fase 8 — 8 operazioni)
+│   │           └── PagamentiTelematiciAvvisiDigitaliEndpoint.java (✅ Fase 8 — 1 operazione)
 │   └── exception/
 │       └── SoapFaultExceptionResolver.java (✅ Fase 10 — messaggio fault senza tipoOperazione)
 ├── domain/
 │   ├── ModalitaRouting.java               (✅ Fase 6)
-│   ├── Ente.java                          (✅ Fase 10 — modello mygov_ente)
+│   ├── Ente.java                          (✅ Fase 10, aggiornato Fase 8: aggiunto codiceFiscaleEnte)
 │   ├── EnteConfigPu.java                  (✅ Fase 10 — modello mygov_ente_config_pu)
 │   ├── EnteCompleto.java                  (✅ Fase 10 — aggregato: Ente + EnteConfigPu)
 │   └── TransactionLog.java               (✅ Fase 6)
 ├── repository/
-│   ├── EnteRepository.java                (✅ Fase 10 — DAO Jdbi per mygov_ente)
-│   ├── EnteRowMapper.java                 (✅ Fase 10)
+│   ├── EnteRepository.java                (✅ Fase 10, aggiornato Fase 8: findByCodiceFiscale)
+│   ├── EnteRowMapper.java                 (✅ Fase 10, aggiornato Fase 8: mapping codice_fiscale_ente)
 │   ├── EnteConfigPuRepository.java        (✅ Fase 10 — DAO Jdbi per mygov_ente_config_pu)
 │   ├── EnteConfigPuRowMapper.java         (✅ Fase 10)
-│   ├── EnteCacheService.java              (✅ Fase 10 — cache TTL ConcurrentHashMap<codIpaEnte, EnteCompleto>)
+│   ├── EnteCacheService.java              (✅ Fase 10, aggiornato Fase 8: cache duale codIpa + codiceFiscale)
 │   ├── TransactionLogRepository.java      (✅ Fase 6)
 │   └── TransactionLogRowMapper.java       (✅ Fase 6)
 ├── common/exception/

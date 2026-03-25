@@ -54,14 +54,14 @@ mypay.mypaycore/
 ├── opencode.jsonc                       ← OpenCode config (MCP servers, agent overrides)
 └── .opencode/
     ├── agents/
+    │   ├── expert.md                    ← @expert: technical expert, architecture, code review
     │   ├── planner.md                   ← @planner: project planning & documentation
+    │   ├── tester.md                    ← @tester: Java testing & Postman collection
     │   └── orchestrator.md              ← @orchestrator: THIS agent (you)
     ├── commands/                         ← Custom slash commands (currently empty)
     └── skills/
-        ├── springline2/
-        │   └── SKILL.md                 ← SpringLine2 framework knowledge (custom, 667 lines)
-        └── pdf/
-            └── SKILL.md                 ← PDF processing skill (Anthropic pre-built)
+        └── springline2/
+            └── SKILL.md                 ← SpringLine2 framework knowledge (custom, 667 lines)
 ```
 
 ---

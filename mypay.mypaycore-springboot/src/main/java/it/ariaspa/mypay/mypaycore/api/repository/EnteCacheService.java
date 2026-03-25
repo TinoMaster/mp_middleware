@@ -20,9 +20,17 @@ import java.util.concurrent.locks.ReentrantLock;
  * Servizio di cache in-memory per le informazioni degli enti e le loro configurazioni
  * verso la Piattaforma Unitaria.
  *
- * <p>Mantiene una mappa {@code codIpaEnte -> EnteCompleto} caricata dalla query
- * JOIN tra {@code mygov_ente} e {@code mygov_ente_config_pu}. La cache ha un TTL
- * configurabile; alla scadenza viene ricaricata dal database alla prossima richiesta.
+ * <p>Mantiene due mappe concorrenti:
+ * <ul>
+ *   <li>{@code codIpaEnte -> EnteCompleto} — lookup primario per codice IPA</li>
+ *   <li>{@code codiceFiscaleEnte -> EnteCompleto} — lookup secondario per codice fiscale
+ *       (usato dagli endpoint MyPay che identificano l'ente tramite
+ *       {@code identificativoDominio})</li>
+ * </ul>
+ *
+ * <p>Entrambe le mappe sono caricate dalla query JOIN tra {@code mygov_ente}
+ * e {@code mygov_ente_config_pu}. La cache ha un TTL configurabile; alla scadenza
+ * viene ricaricata dal database alla prossima richiesta.
  *
  * <p>La cache e' thread-safe grazie all'uso di {@link ConcurrentHashMap} e
  * {@link ReentrantLock} per il refresh. Solo un thread alla volta puo' ricaricare
@@ -53,10 +61,19 @@ public class EnteCacheService {
     private final EnteConfigPuRepository enteConfigPuRepository;
 
     /**
-     * Mappa thread-safe: codIpaEnte -> informazioni complete dell'ente.
+     * Mappa thread-safe primaria: codIpaEnte -> informazioni complete dell'ente.
      * Contiene TUTTI gli enti di mygov_ente, con o senza configurazione PU.
      */
-    private final Map<String, EnteCompleto> cache = new ConcurrentHashMap<>();
+    private final Map<String, EnteCompleto> cacheByCodIpa = new ConcurrentHashMap<>();
+
+    /**
+     * Mappa thread-safe secondaria: codiceFiscaleEnte -> informazioni complete dell'ente.
+     * Usata per risolvere l'identificativoDominio (codice fiscale) presente negli
+     * header SOAP dei servizi MyPay al corrispondente EnteCompleto.
+     *
+     * <p>Contiene solo gli enti che hanno un codice fiscale non nullo in mygov_ente.
+     */
+    private final Map<String, EnteCompleto> cacheByCodiceFiscale = new ConcurrentHashMap<>();
 
     /** Timestamp dell'ultimo caricamento della cache. */
     private volatile Instant ultimoCaricamento = Instant.EPOCH;
@@ -97,7 +114,22 @@ public class EnteCacheService {
      */
     public Optional<EnteCompleto> findByCodIpaEnte(String codIpaEnte) {
         refreshIfExpired();
-        return Optional.ofNullable(cache.get(codIpaEnte));
+        return Optional.ofNullable(cacheByCodIpa.get(codIpaEnte));
+    }
+
+    /**
+     * Cerca un ente per codice fiscale (identificativoDominio), aggiornando la cache se scaduta.
+     *
+     * <p>Usato dagli endpoint SOAP MyPay che identificano l'ente tramite
+     * {@code <identificativoDominio>} nell'header SOAP (CCPPa, Esito, CCP, CCP25,
+     * RT, RP, AvvisiDigitali).
+     *
+     * @param codiceFiscale codice fiscale dell'ente (es. {@code "80007580279"})
+     * @return {@link EnteCompleto} se trovato, {@link Optional#empty()} altrimenti
+     */
+    public Optional<EnteCompleto> findByCodiceFiscale(String codiceFiscale) {
+        refreshIfExpired();
+        return Optional.ofNullable(cacheByCodiceFiscale.get(codiceFiscale));
     }
 
     /**
@@ -106,7 +138,7 @@ public class EnteCacheService {
      * @return numero di enti in cache
      */
     public int size() {
-        return cache.size();
+        return cacheByCodIpa.size();
     }
 
     /**
@@ -115,7 +147,7 @@ public class EnteCacheService {
      * @return numero di enti con flusso PU attivo
      */
     public long countEntiPiattaformaUnitaria() {
-        return cache.values().stream()
+        return cacheByCodIpa.values().stream()
                 .filter(EnteCompleto::isPiattaformaUnitaria)
                 .count();
     }
@@ -154,6 +186,7 @@ public class EnteCacheService {
      * Ricarica la cache dal database con una query JOIN tra mygov_ente e mygov_ente_config_pu.
      *
      * <p>Carica prima tutti gli enti, poi tutte le configurazioni PU, e le combina.
+     * Popola entrambe le mappe: per codice IPA e per codice fiscale.
      * Se la query al DB fallisce, la cache corrente viene mantenuta.
      */
     private void refreshCache() {
@@ -170,26 +203,41 @@ public class EnteCacheService {
                 configPuPerEnte.put(config.getCodiceIpaEnte(), config);
             }
 
-            // Costruisce la nuova cache combinando ente + config PU (opzionale)
-            Map<String, EnteCompleto> nuovaCache = new ConcurrentHashMap<>();
+            // Costruisce le nuove cache combinando ente + config PU (opzionale)
+            Map<String, EnteCompleto> nuovaCacheByCodIpa = new ConcurrentHashMap<>();
+            Map<String, EnteCompleto> nuovaCacheByCodiceFiscale = new ConcurrentHashMap<>();
+
             for (Ente ente : enti) {
                 EnteConfigPu configPu = configPuPerEnte.get(ente.getCodIpaEnte());
                 EnteCompleto enteCompleto = new EnteCompleto(ente, configPu);
-                nuovaCache.put(ente.getCodIpaEnte(), enteCompleto);
+
+                // Mappa primaria: per codice IPA
+                nuovaCacheByCodIpa.put(ente.getCodIpaEnte(), enteCompleto);
+
+                // Mappa secondaria: per codice fiscale (se disponibile)
+                String codiceFiscale = ente.getCodiceFiscaleEnte();
+                if (codiceFiscale != null && !codiceFiscale.isBlank()) {
+                    nuovaCacheByCodiceFiscale.put(codiceFiscale, enteCompleto);
+                }
             }
 
-            // Sostituzione atomica del contenuto della cache
-            cache.clear();
-            cache.putAll(nuovaCache);
+            // Sostituzione atomica del contenuto delle cache
+            cacheByCodIpa.clear();
+            cacheByCodIpa.putAll(nuovaCacheByCodIpa);
+            cacheByCodiceFiscale.clear();
+            cacheByCodiceFiscale.putAll(nuovaCacheByCodiceFiscale);
             ultimoCaricamento = Instant.now();
 
-            long conPu = nuovaCache.values().stream().filter(EnteCompleto::isPiattaformaUnitaria).count();
-            log.info("Cache enti aggiornata: {} enti totali ({} con PU attiva, {} con flusso legacy)",
-                    cache.size(), conPu, cache.size() - conPu);
+            long conPu = nuovaCacheByCodIpa.values().stream()
+                    .filter(EnteCompleto::isPiattaformaUnitaria).count();
+            log.info("Cache enti aggiornata: {} enti totali ({} con PU attiva, {} con flusso legacy), "
+                            + "{} enti con codice fiscale indicizzato",
+                    cacheByCodIpa.size(), conPu, cacheByCodIpa.size() - conPu,
+                    cacheByCodiceFiscale.size());
 
         } catch (Exception e) {
             log.warn("Errore durante il refresh della cache enti — mantengo cache corrente "
-                    + "(dimensione: {}): {}", cache.size(), e.getMessage());
+                    + "(dimensione: {}): {}", cacheByCodIpa.size(), e.getMessage());
             // Non rilancia l'eccezione: la cache stale e' preferibile a nessuna cache
         }
     }

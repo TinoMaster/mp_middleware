@@ -66,7 +66,7 @@ SIL (Ente Pubblico)                    MIDDLEWARE (questo progetto)             
 | Build | Maven multi-modulo | 3.9.9 |
 | SOAP Server | Spring Web Services (`@Endpoint`) | via spring-boot-starter-web-services |
 | SOAP Client | `springline2-ws` | `2026.01.01` (versione FISSA) |
-| Database | PostgreSQL + HikariCP + JPA/Hibernate | via spring-boot-starter-data-jpa |
+| Database | PostgreSQL + HikariCP + Jdbi | via configurazione manuale |
 | Resilienza | Resilience4j (Circuit Breaker + Retry) | 2.2.0 |
 | Monitoraggio | Spring Boot Actuator | via spring-boot-starter-actuator |
 | Sicurezza | SpringLine2 Security (JWT/Anonymous) | integrato |
@@ -75,11 +75,12 @@ SIL (Ente Pubblico)                    MIDDLEWARE (questo progetto)             
 
 | Fase | Stato | Cosa include |
 |------|-------|-------------|
-| **Fase 1** | ✅ Completata | Pulizia demo, struttura middleware, OAuth2, endpoint SOAP `ReconciliationEndpoint` |
+| **Fase 1** | ✅ Completata | Pulizia demo, struttura middleware, OAuth2, endpoint SOAP prototipo `ReconciliationEndpoint` |
 | **Fase 5** | ✅ Completata | Resilience4j, gestione errori (`SoapFaultExceptionResolver`), health check, profili, 22 test unitari |
-| **Fase 2** | ✅ Plumbing | DataSource PostgreSQL `pa` configurato (HikariCP + JPA); tabelle e entity da definire |
+| **Fase 2** | ✅ Completata | DataSource PostgreSQL `pa` (HikariCP + Jdbi); tabelle `MWPAY_TRANSACTION_LOG`, `MYGOV_ENTE_CONFIG_PU`; entity `Ente`, `EnteConfigPu`, `TransactionLog`; repository Jdbi |
+| **Fase 7** | ✅ Completata | Routing dinamico per ente (DB-driven), `RoutingDecisionService`, `EnteCacheService` con cache duale (codIpa + codiceFiscale), `BackendRoutingConfig`, `PathRegistryConfig`, metriche Micrometer |
+| **Fase 8** | ✅ Completata | 40 operazioni SOAP su 10 endpoint (9 MyPay + 1 MyPivot), `AbstractSoapProxyEndpoint` classe base, collection Postman 48 richieste |
 | **Fase 3** | ⬜ Da fare | Logica di business: riconciliazione, flussi tesoreria, validazione |
-| **Fase 4** | ⬜ Da fare | Endpoint SOAP aggiuntivi, possibile migrazione contract-first (WSDL/XSD) |
 | **Fase 6** | ⬜ Da fare | Messaggistica asincrona JMS/ActiveMQ (`springline2-jms`) |
 
 ---
@@ -113,40 +114,88 @@ mypay.mypaycore/                              ← Parent POM (it.ariaspa:cm:1.0.
 │       │   ├── config/
 │       │   │   ├── PiattaformaUnitariaConfig.java  ← @ConfigurationProperties OAuth2 + URL
 │       │   │   ├── SoapWebServiceConfig.java       ← @EnableWs + MessageDispatcherServlet
-│       │   │   └── DataSourceConfig.java           ← DataSource PA manuale (HikariCP + JPA)
+│       │   │   ├── DataSourceConfiguration.java     ← DataSource PA manuale (HikariCP)
+│       │   │   ├── JdbiConfiguration.java           ← Configurazione Jdbi + SqlLogger
+│       │   │   ├── BackendRoutingConfig.java        ← Mappa endpoint → path backend PU
+│       │   │   └── PathRegistryConfig.java          ← Registro path SOAP esposti
 │       │   ├── auth/
 │       │   │   ├── OAuthTokenService.java          ← Ciclo di vita token OAuth2 (cache + lock)
-│       │   │   ├── OAuthTokenInterceptor.java      ← Inietta Bearer token nelle richieste
 │       │   │   └── dto/OAuthTokenResponse.java     ← DTO risposta OAuth2
 │       │   ├── client/
-│       │   │   └── PiattaformaUnitariaClient.java  ← RestTemplate + retry 401 + @CircuitBreaker + @Retry
+│       │   │   ├── PiattaformaUnitariaClient.java  ← RestTemplate + retry 401 + @CircuitBreaker + @Retry
+│       │   │   └── ProxyForwardingClient.java      ← Client generico per inoltro SOAP verso PU
 │       │   ├── soap/
 │       │   │   ├── endpoint/
-│       │   │   │   └── ReconciliationEndpoint.java ← @Endpoint proxy trasparente (Envelope completo)
+│       │   │   │   ├── AbstractSoapProxyEndpoint.java  ← Classe base: estrazione Envelope, inoltro, risposta
+│       │   │   │   ├── mypay/                          ← 4 endpoint MyPay
+│       │   │   │   │   ├── PagamentiTelematiciDovutiPagatiEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciEsitoEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciFlussiSPCEndpoint.java
+│       │   │   │   │   └── PagamentiTelematiciCCPPaEndpoint.java
+│       │   │   │   ├── mypay/fesp/                     ← 5 endpoint MyPay FESP
+│       │   │   │   │   ├── PagamentiTelematiciCCPEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciCCP25Endpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciRPEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciRTEndpoint.java
+│       │   │   │   │   └── PagamentiTelematiciAvvisiDigitaliEndpoint.java
+│       │   │   │   └── mypivot/                        ← 1 endpoint MyPivot
+│       │   │   │       └── ReconciliationEndpoint.java ← Riconciliazione (refactored da Fase 1)
 │       │   │   └── exception/
 │       │   │       └── SoapFaultExceptionResolver.java ← Mappa eccezioni → SOAP Fault
+│       │   ├── domain/
+│       │   │   ├── Ente.java                    ← Entity ente (codIpa, codiceFiscale, nome)
+│       │   │   ├── EnteConfigPu.java            ← Configurazione PU per ente
+│       │   │   ├── EnteCompleto.java            ← DTO Ente + EnteConfigPu aggregato
+│       │   │   ├── ModalitaRouting.java         ← Enum modalità routing (STANDARD/DIRETTO)
+│       │   │   └── TransactionLog.java          ← Entity log transazioni SOAP
+│       │   ├── repository/
+│       │   │   ├── EnteRepository.java          ← Jdbi repository per enti
+│       │   │   ├── EnteRowMapper.java           ← RowMapper per Ente
+│       │   │   ├── EnteCacheService.java        ← Cache duale (codIpa + codiceFiscale)
+│       │   │   ├── EnteConfigPuRepository.java  ← Jdbi repository per configurazione PU
+│       │   │   ├── EnteConfigPuRowMapper.java   ← RowMapper per EnteConfigPu
+│       │   │   ├── TransactionLogRepository.java ← Jdbi repository per log transazioni
+│       │   │   └── TransactionLogRowMapper.java  ← RowMapper per TransactionLog
+│       │   ├── routing/
+│       │   │   ├── RoutingDecisionService.java  ← Decide URL backend per ente + endpoint
+│       │   │   └── RoutingDecision.java         ← DTO decisione di routing
+│       │   ├── logging/
+│       │   │   ├── TransactionLoggingService.java ← Logging transazioni su DB
+│       │   │   ├── JdbiSqlLogger.java           ← Logger SQL per Jdbi
+│       │   │   └── LogMarker.java               ← Marker per logging strutturato
+│       │   ├── metrics/
+│       │   │   └── MiddlewareMetricsService.java ← Metriche Micrometer (contatori, timer)
 │       │   ├── common/exception/
 │       │   │   ├── PiattaformaAuthenticationException.java
-│       │   │   └── PiattaformaCommunicationException.java
-│       │   └── health/
-│       │       ├── OAuthTokenHealthIndicator.java
-│       │       └── PiattaformaUnitariaHealthIndicator.java
+│       │   │   ├── PiattaformaCommunicationException.java
+│       │   │   ├── EnteNonCensitoException.java  ← Ente non trovato in DB
+│       │   │   └── PathNonRiconosciutoException.java ← Path SOAP non registrato
+│       │   ├── health/
+│       │   │   ├── OAuthTokenHealthIndicator.java
+│       │   │   ├── PiattaformaUnitariaHealthIndicator.java
+│       │   │   └── EnteConfigHealthIndicator.java ← Health check configurazione enti
+│       │   └── util/
+│       │       ├── Utilities.java
+│       │       ├── LogHelper.java
+│       │       └── Constants.java
 │       ├── main/resources/config/
 │       │   ├── application.properties         ← Config base (sempre caricata)
 │       │   ├── application-dev.properties     ← Profilo dev (unico attivo)
 │       │   └── bootstrap.properties
-│       └── test/java/.../api/
-│           ├── auth/OAuthTokenServiceTest.java           ← 9 test
-│           ├── client/PiattaformaUnitariaClientTest.java ← 7 test
-│           └── soap/endpoint/ReconciliationEndpointTest.java ← 6 test
 ├── mypay.mypaycore-properties/               ← Template config per deploy
-├── mypay.mypaycore-db/                       ← Script SQL (placeholder)
+├── mypay.mypaycore-db/                       ← Script SQL (DDL + DML)
+│   └── src/main/sql/
+│       ├── 002_CREATE_MWPAY_TRANSACTION_LOG.sql
+│       ├── 004_CREATE_MYGOV_ENTE_CONFIG_PU.sql
+│       ├── 005_DROP_MWPAY_ENTE_CONFIG.sql
+│       ├── 006_INSERT_ENTE_CONFIG_PU_EXAMPLE.sql
+│       └── 007_ALTER_MYGOV_ENTE_CONFIG_PU.sql
 ├── mypay.mypaycore-release/                  ← Packaging rilascio
 └── docs/                                     ← Documentazione (italiano)
-    ├── architettura/ARCHITETTURA_MIDDLEWARE.md
     ├── guidelines/
-    │   ├── DOCUMENTAZIONE_PRIMA_FASE.md      ← Guida tecnica completa (v1.4.0)
-    │   └── Plan.md                           ← Piano fasi e stato attività
+│   ├── DOCUMENTAZIONE_TECNICA.md        ← Guida tecnica completa (SSoT)
+│   ├── Plan.md                           ← Piano fasi e stato attività
+    │   └── SOAP_ARCHITECTURE_MIGRATION_GUIDE_MYPAY.md ← Guida migrazione architettura SOAP
     └── procedures/GUIDA_TEST_POSTMAN_END_TO_END.md
 ```
 
@@ -156,28 +205,50 @@ mypay.mypaycore/                              ← Parent POM (it.ariaspa:cm:1.0.
 
 ### Componenti chiave e come interagiscono
 
-#### `ReconciliationEndpoint` — Proxy SOAP trasparente
+#### `AbstractSoapProxyEndpoint` — Classe base per tutti gli endpoint proxy SOAP
 
-L'endpoint usa un approccio **non standard** ma necessario:
-- Riceve la richiesta SOAP tramite `@PayloadRoot(namespace, localPart)`
-- Inietta il `MessageContext` per accedere all'**Envelope SOAP completo** (Header + Body)
-- Serializza l'Envelope intero con `SoapMessage.writeTo()` e lo inoltra
-- La PU **richiede** l'Header SOAP con `codIpaEnte` — inviare solo il Body causerebbe errore
-- Dalla risposta PU, estrae il contenuto del `<Body>` con `extractBodyContent()`
-- Converte in `Element` DOM e lo restituisce a Spring WS per il re-wrapping
+Dalla Fase 8, tutti i 10 endpoint SOAP ereditano da questa classe astratta che centralizza:
+- **Estrazione Envelope**: riceve la richiesta SOAP, inietta il `MessageContext`, accede
+  all'Envelope SOAP completo (Header + Body) tramite `SoapMessage.writeTo()`
+- **Inoltro autenticato**: serializza l'Envelope e lo inoltra alla Piattaforma Unitaria
+  tramite `ProxyForwardingClient` (che delega a `PiattaformaUnitariaClient` per OAuth2)
+- **Routing dinamico**: usa `RoutingDecisionService` per determinare l'URL backend in base
+  al `codIpaEnte` estratto dall'Header SOAP e alla configurazione in DB per ente
+- **Estrazione risposta**: dalla risposta PU, estrae il contenuto del `<Body>` con
+  `extractBodyContent()`, converte in `Element` DOM e lo restituisce a Spring WS
+- **Sicurezza XML (XXE hardening)**: `DocumentBuilderFactory` configurato con DTD e external
+  entities disabilitati, `TransformerFactory` con `ACCESS_EXTERNAL_DTD`/`STYLESHEET` vuoti
+
+Ogni sotto-classe (endpoint concreto) specifica solo:
+- `NAMESPACE_URI` e `HEADER_NAMESPACE_URI` per l'operazione SOAP
+- Il mapping `@PayloadRoot(namespace, localPart)` per Spring WS
+- Il path SOAP esposto al SIL
+
+#### Struttura degli endpoint SOAP (10 endpoint, 40 operazioni)
+
+| Pacchetto | Endpoint | Operazioni | Servizio WSDL |
+|-----------|----------|------------|---------------|
+| `mypay/` | `PagamentiTelematiciDovutiPagatiEndpoint` | 16 | MyPay — dovuti/pagati |
+| `mypay/` | `PagamentiTelematiciEsitoEndpoint` | 1 | MyPay — esiti |
+| `mypay/` | `PagamentiTelematiciFlussiSPCEndpoint` | 2 | MyPay — flussi SPC |
+| `mypay/` | `PagamentiTelematiciCCPPaEndpoint` | 4 | MyPay — CCP PA |
+| `mypay/fesp/` | `PagamentiTelematiciCCPEndpoint` | 2 | FESP — CCP |
+| `mypay/fesp/` | `PagamentiTelematiciCCP25Endpoint` | 5 | FESP — CCP 2.5 |
+| `mypay/fesp/` | `PagamentiTelematiciRPEndpoint` | 8 | FESP — RP |
+| `mypay/fesp/` | `PagamentiTelematiciRTEndpoint` | 1 | FESP — RT |
+| `mypay/fesp/` | `PagamentiTelematiciAvvisiDigitaliEndpoint` | 1 | FESP — avvisi digitali |
+| `mypivot/` | `ReconciliationEndpoint` | 1 | MyPivot — riconciliazione |
+
+#### `ReconciliationEndpoint` — Proxy SOAP MyPivot (endpoint originario, ora in `mypivot/`)
+
+L'endpoint originario della Fase 1, ora rifattorizzato come sotto-classe di
+`AbstractSoapProxyEndpoint` e spostato nel pacchetto `soap/endpoint/mypivot/`.
 
 **Namespaces**:
 - Body: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
 - Header: `http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead`
 - Local part: `pivotSILAutorizzaImportFlussoTesoreria`
 - Path: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
-
-**Sicurezza XML (XXE hardening)** — `DocumentBuilderFactory` configurato con:
-- `disallow-doctype-decl: true`
-- `external-general-entities: false`
-- `external-parameter-entities: false`
-- `XIncludeAware: false`, `expandEntityReferences: false`
-- `TransformerFactory`: `ACCESS_EXTERNAL_DTD` e `ACCESS_EXTERNAL_STYLESHEET` vuoti
 
 #### `OAuthTokenService` — Gestione token OAuth2
 
@@ -190,21 +261,38 @@ L'endpoint usa un approccio **non standard** ma necessario:
 
 #### `PiattaformaUnitariaClient` — Client HTTP resiliente
 
-- `RestTemplate` con `OAuthTokenInterceptor` (Bearer token automatico)
+- `RestTemplate` con token Bearer iniettato manualmente da `OAuthTokenService`
 - Timeout: connect 5s, read 30s (chiamate SOAP lente)
 - Retry manuale su 401: `refreshToken()` + seconda chiamata
 - `@CircuitBreaker(name = "piattaformaUnitaria")`: finestra 10 chiamate, soglia 50%, attesa 30s
 - `@Retry(name = "piattaformaUnitaria")`: max 3 tentativi, backoff esponenziale 1s → 2s → 4s
 - Fallback: lancia `PiattaformaCommunicationException` con HTTP 503
 
-#### `DataSourceConfig` — DataSource PostgreSQL
+#### `DataSourceConfiguration` + `JdbiConfiguration` — Persistenza PostgreSQL
 
 - Prefisso **personalizzato**: `spring.datasource.pa.*` (non standard Spring)
 - Motivo: convenzione ereditata dal progetto legacy `mypay4`
-- Configurazione manuale: `DataSourceProperties` → `HikariDataSource` → `EntityManagerFactory` → `TransactionManager`
-- Tutti i bean `@Primary` (datasource unico)
-- Entity future in: `it.ariaspa.mypay.mypaycore.api.domain`
-- Repository futuri in: `it.ariaspa.mypay.mypaycore.api.repository`
+- `DataSourceConfiguration`: `DataSourceProperties` → `HikariDataSource` manuale
+- `JdbiConfiguration`: configura Jdbi con `JdbiSqlLogger` per logging query
+- **Repository Jdbi** (non JPA): `EnteRepository`, `EnteConfigPuRepository`, `TransactionLogRepository`
+- Entity in: `it.ariaspa.mypay.mypaycore.api.domain` (`Ente`, `EnteConfigPu`, `TransactionLog`)
+- `Ente` ha campi: `codIpaEnte`, `codiceFiscaleEnte`, `nome`, URL PU e credenziali OAuth2
+- RowMapper dedicati: `EnteRowMapper`, `EnteConfigPuRowMapper`, `TransactionLogRowMapper`
+
+#### `EnteCacheService` — Cache duale per routing dinamico
+
+- **Cache duale**: `cacheByCodIpa` (ConcurrentHashMap) + `cacheByCodiceFiscale` (ConcurrentHashMap)
+- Al primo accesso carica tutti gli enti dal DB e popola entrambe le cache
+- Lookup per `codIpaEnte` (dall'Header SOAP) o per `codiceFiscaleEnte` (da alcuni endpoint)
+- Refresh periodico / on-demand per riflettere cambiamenti in DB
+- Lancia `EnteNonCensitoException` se l'ente non è trovato
+
+#### `RoutingDecisionService` — Routing dinamico per ente
+
+- Riceve `codIpaEnte` + path SOAP dalla richiesta
+- Consulta `EnteCacheService` per ottenere la configurazione dell'ente
+- Determina URL backend PU usando `BackendRoutingConfig` (mappa endpoint → path backend)
+- Restituisce `RoutingDecision` con URL completo + credenziali OAuth2 dell'ente
 
 #### Configurazione sicurezza SpringLine2
 
@@ -222,13 +310,11 @@ L'endpoint usa un approccio **non standard** ma necessario:
 | Retry max tentativi | 3 | 3 |
 | Backoff esponenziale | 2x | 2x |
 
-### Test unitari — 22 test, 0 fallimenti
+### Test unitari — stato attuale
 
-| Classe | Test | Focus |
-|--------|------|-------|
-| `OAuthTokenServiceTest` | 9 | Cache, refresh, gestione errori OAuth2 |
-| `PiattaformaUnitariaClientTest` | 7 | Inoltro, retry 401, circuit breaker, fallback |
-| `ReconciliationEndpointTest` | 6 | Proxy trasparente, estrazione body, namespace |
+I test unitari originali (Fase 1+5) sono stati eliminati durante il refactoring multi-ente.
+Al momento **non ci sono test unitari** nel progetto. Per la lista dei componenti da testare e le
+priorità, consultare `docs/guidelines/DOCUMENTAZIONE_TECNICA.md` (sezione test) e l'agente **@tester**.
 
 **Pattern di test**: mock di `RestTemplate`, `MessageContext`, `SoapMessage`. Costruttori package-private
 per iniezione di mock.
@@ -272,7 +358,7 @@ per iniezione di mock.
 4. **Identifica** le dipendenze (serve la skill `springline2`? serve aggiornare il POM?)
 5. **Implementa** seguendo i pattern esistenti del progetto
 6. **Documenta** in italiano: Javadoc su classi/metodi pubblici, commenti inline sul *perché*
-7. **Suggerisci** di invocare `@planner` per aggiornare `Plan.md` e `DOCUMENTAZIONE_PRIMA_FASE.md`
+7. **Suggerisci** di invocare `@planner` per aggiornare `Plan.md` e `DOCUMENTAZIONE_TECNICA.md`
 
 ### Come valutare i rischi e il debito tecnico
 
@@ -325,7 +411,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 
 | Situazione | Azione |
 |-----------|--------|
-| Aggiornare `Plan.md`, `DOCUMENTAZIONE_PRIMA_FASE.md` o altra documentazione in `docs/` | Suggerisci di invocare **@planner** |
+| Aggiornare `Plan.md`, `DOCUMENTAZIONE_TECNICA.md` o altra documentazione in `docs/` | Suggerisci di invocare **@planner** |
 | Creare nuovi agenti, skill, comandi o configurare MCP server | Suggerisci di invocare **@orchestrator** |
 | Lavori su configurazione SpringLine2, sicurezza SPL, logging MON/APP, client SOAP SPL | Carica la skill **springline2** |
 | Verifiche sul database del progetto | Usa il tool **mypay-db** per query SQL |
@@ -337,31 +423,30 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 Queste sono decisioni da prendere nelle fasi future. Quando ti viene chiesto consiglio su
 questi temi, fornisci raccomandazioni fondate e giustificate:
 
-1. **Schema DB** (Fase 2 rimanente):
-   - Naming convention tabelle
-   - Strategia migrazione: Flyway vs. script manuali
-   - Tabelle: `TRANSACTION_LOG`, `AUDIT_LOG`, `OAUTH_TOKEN_CACHE` (opzionale)
-   - Dove mettere entity JPA: `api.domain`, repository: `api.repository`
-
-2. **Logica di business** (Fase 3):
+1. **Logica di business** (Fase 3):
    - Mapping messaggi SOAP SIL ↔ Piattaforma Unitaria
    - Riconciliazione pagamenti (`tipoFlusso=O`, `tipoFlusso=F`)
    - Validazione business dei dati in ingresso
    - Trasformazione payload SOAP (se necessaria)
 
-3. **Endpoint SOAP aggiuntivi** (Fase 4):
-   - Migrazione contract-last → contract-first
+2. **Contract-first migration** (futuro):
+   - I 10 endpoint attuali usano contract-last (`@PayloadRoot`)
+   - Eventuale migrazione a WSDL/XSD contract-first
    - WSDL/XSD: forniti da pagoPA o definiti internamente?
-   - Lista completa endpoint richiesti
+
+3. **Test di copertura** (prossima priorità):
+   - 9 nuovi endpoint SOAP non hanno test unitari dedicati
+   - `AbstractSoapProxyEndpoint`, `EnteCacheService`, `RoutingDecisionService` da testare
+   - `ProxyForwardingClient`, `TransactionLoggingService`, `MiddlewareMetricsService` da testare
 
 4. **Profili** (futuro):
    - Creazione `application-uat.properties` e `application-prod.properties`
    - Gestione segreti: variabili d'ambiente, Consul/Conjur, vault
 
 5. **Multi-tenancy** (futuro):
-   - Più enti sulla stessa istanza del middleware
-   - Rate limiting per SIL
-   - Isolamento dati e configurazione per ente
+   - Il routing dinamico per ente è già implementato (Fase 7)
+   - Rate limiting per SIL da aggiungere
+   - Isolamento dati e configurazione per ente già parziale (tabella `MYGOV_ENTE_CONFIG_PU`)
 
 ---
 
@@ -372,11 +457,10 @@ questi temi, fornisci raccomandazioni fondate e giustificate:
 **Domanda**: "Come dovremmo gestire il logging delle transazioni SOAP per la Fase 2?"
 
 **Risposta attesa**: Analisi tecnica dettagliata che considera:
-- La struttura attuale del `ReconciliationEndpoint` e del `PiattaformaUnitariaClient`
+- L'architettura attuale con `AbstractSoapProxyEndpoint` e i 10 endpoint concreti
 - Il framework di logging SpringLine2 (MON/MON-APP)
-- La tabella `TRANSACTION_LOG` prevista
-- Proposta di entity JPA con campi concreti
-- Pattern di inserimento (sincrono vs. asincrono)
+- Il `TransactionLoggingService` e la tabella `MWPAY_TRANSACTION_LOG` esistente
+- Pattern di logging (sincrono vs. asincrono)
 - Impatto sui test esistenti
 - Codice d'esempio in Java con Javadoc in italiano
 

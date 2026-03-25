@@ -6,7 +6,7 @@ import org.jdbi.v3.sqlobject.customizer.Bind;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
 /**
- * DAO Jdbi per la tabella {@code mwpay_transaction_log}.
+ * DAO Jdbi per la tabella {@code mygov_mw_transaction_log}.
  *
  * <p>Fornisce le operazioni di scrittura per il log transazionale del middleware.
  * Ogni richiesta SOAP processata genera un record in questa tabella per garantire
@@ -42,7 +42,7 @@ public interface TransactionLogRepository {
      * @param messaggioErrore    messaggio di errore (null se esito = OK)
      * @param durataMs           durata della transazione in millisecondi
      */
-    @SqlUpdate("INSERT INTO mwpay_transaction_log "
+    @SqlUpdate("INSERT INTO mygov_mw_transaction_log "
             + "(cod_ipa_ente, tipo_operazione, modalita_routing, destinazione, "
             + "path_richiesta, http_status_risposta, esito, messaggio_errore, durata_ms) "
             + "VALUES (:codIpaEnte, :tipoOperazione, :modalitaRouting, :destinazione, "

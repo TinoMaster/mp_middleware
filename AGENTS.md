@@ -18,9 +18,10 @@ quando lavorano su questo progetto.
 
 Il middleware si interpone tra i **SIL** (Sistemi Informativi Locali) degli enti pubblici e la
 **Piattaforma Unitaria** di pagoPA:
-- Espone endpoint **SOAP** ai SIL (protocollo legacy)
+- Espone **40 operazioni SOAP** distribuite su **10 endpoint** ai SIL (9 MyPay + 1 MyPivot)
 - Gestisce autonomamente l'**autenticazione OAuth2** verso pagoPA
 - **Inoltra** le richieste autenticate e restituisce le risposte
+- Supporta **routing dinamico** per ente (DB-driven) con cache duale (codIpa + codiceFiscale)
 
 ---
 
@@ -34,17 +35,28 @@ mypay.mypaycore/                         ← root, parent POM
 │       │   ├── config/
 │       │   ├── auth/
 │       │   ├── client/
-│       │   ├── soap/endpoint/
+│       │   ├── soap/
+│       │   │   ├── endpoint/
+│       │   │   │   ├── AbstractSoapProxyEndpoint.java  ← classe base proxy SOAP
+│       │   │   │   ├── mypay/                          ← 4 endpoint MyPay
+│       │   │   │   ├── mypay/fesp/                     ← 5 endpoint MyPay FESP
+│       │   │   │   └── mypivot/                        ← 1 endpoint MyPivot (Reconciliation)
+│       │   │   └── exception/
+│       │   ├── domain/
+│       │   ├── repository/
+│       │   ├── routing/
+│       │   ├── logging/
+│       │   ├── metrics/
 │       │   ├── common/exception/
 │       │   ├── health/
-│       │   ├── logging/
 │       │   └── util/
 │       └── test/java/...
 ├── mypay.mypaycore-properties/          ← application*.properties per il deploy
-├── mypay.mypaycore-db/                  ← script SQL
+├── mypay.mypaycore-db/                  ← script SQL (DDL e DML)
 ├── docs/                                ← tutta la documentazione (in italiano)
-│   ├── guidelines/DOCUMENTAZIONE_PRIMA_FASE.md   ← guida tecnica principale
+│   ├── guidelines/DOCUMENTAZIONE_TECNICA.md      ← guida tecnica principale (SSoT)
 │   ├── guidelines/Plan.md               ← stato fasi e piano attività
+│   ├── guidelines/SOAP_ARCHITECTURE_MIGRATION_GUIDE_MYPAY.md
 │   ├── procedures/GUIDA_TEST_POSTMAN_END_TO_END.md
 │   └── springline2/RIASUNTO_SPRINGLINE2.md
 ├── .opencode/
@@ -91,7 +103,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 
 - Tutta la documentazione va scritta in **italiano**
 - Dopo ogni modifica significativa al codice, aggiornare:
-  - `docs/guidelines/DOCUMENTAZIONE_PRIMA_FASE.md` (incrementare versione e data)
+  - `docs/guidelines/DOCUMENTAZIONE_TECNICA.md` (incrementare versione e data)
   - `docs/guidelines/Plan.md` (aggiornare stato fasi)
 - Per pianificazione e aggiornamento docs, invocare l'agente **@planner**
 
@@ -178,6 +190,6 @@ I profili `uat` e `prod` verranno creati in futuro quando necessario.
 | Vincolo | Dettaglio |
 |---------|-----------|
 | Enforcer Maven | Richiede OS Unix — usare `-Denforcer.skip=true` su Windows |
-| DataSource | Prefisso `spring.datasource.pa.*`, configurato manualmente in `DataSourceConfiguration.java` e integrato con `JdbiConfiguration.java` |
+| DataSource | Prefisso `spring.datasource.pa.*`, configurato manualmente in `DataSourceConfiguration.java` con `JdbiConfiguration.java`. Repository basati su Jdbi (non JPA) |
 | Spring WS | Libreria `springline2-ws` è client SOAP, non server — server gestito da `spring-boot-starter-web-services` |
 | Profilo `local` | Rimosso — non ricreare |

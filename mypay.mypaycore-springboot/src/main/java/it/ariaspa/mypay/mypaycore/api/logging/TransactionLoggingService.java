@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
  * Servizio per il logging transazionale delle richieste SOAP processate dal middleware.
  *
  * <p>Ogni richiesta SOAP ricevuta dal middleware genera un record nella tabella
- * {@code mwpay_transaction_log} tramite questo servizio. Il logging e' sincrono
+ * {@code mygov_mw_transaction_log} tramite questo servizio. Il logging e' sincrono
  * (post-request) ma <strong>non bloccante</strong>: se l'inserimento in DB fallisce,
  * viene registrato un warning nel log applicativo senza interrompere la risposta al SIL.
  *
@@ -138,7 +138,7 @@ public class TransactionLoggingService {
     }
 
     /**
-     * Inserisce un record di log nella tabella {@code mwpay_transaction_log}.
+     * Inserisce un record di log nella tabella {@code mygov_mw_transaction_log}.
      *
      * <p>Protetto da try-catch: qualsiasi errore di DB viene catturato e loggato
      * come warning senza propagazione. Questo garantisce che il logging non

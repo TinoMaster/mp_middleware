@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
  * processata dal middleware.
  *
  * <p>Ogni richiesta SOAP ricevuta dal middleware genera un record in
- * {@code mwpay_transaction_log} con le informazioni di routing, esito e durata.
+ * {@code mygov_mw_transaction_log} con le informazioni di routing, esito e durata.
  * Lo scopo e' garantire tracciabilita completa per auditing e diagnostica.
  *
  * <p>Il logging e' sincrono (post-request) ma non bloccante: se l'inserimento

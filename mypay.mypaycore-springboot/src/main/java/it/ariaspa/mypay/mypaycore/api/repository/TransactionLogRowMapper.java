@@ -11,7 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 
 /**
- * Mapper Jdbi che converte le righe della tabella {@code mwpay_transaction_log}
+ * Mapper Jdbi che converte le righe della tabella {@code mygov_mw_transaction_log}
  * in istanze di {@link TransactionLog}.
  *
  * <p>Registrato automaticamente come bean Spring e rilevato da

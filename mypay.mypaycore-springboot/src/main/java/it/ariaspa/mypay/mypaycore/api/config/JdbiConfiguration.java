@@ -144,7 +144,7 @@ public class JdbiConfiguration {
     }
 
     /**
-     * Registra il DAO per la tabella {@code mwpay_transaction_log}.
+     * Registra il DAO per la tabella {@code mygov_mw_transaction_log}.
      *
      * @param jdbi istanza Jdbi principale
      * @return proxy DAO per il log transazionale

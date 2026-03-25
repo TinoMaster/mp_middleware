@@ -32,6 +32,7 @@ public class EnteRowMapper implements RowMapper<Ente> {
         Ente ente = new Ente();
         ente.setMygovEnteId(rs.getLong("mygov_ente_id"));
         ente.setCodIpaEnte(rs.getString("cod_ipa_ente"));
+        ente.setCodiceFiscaleEnte(rs.getString("codice_fiscale_ente"));
         ente.setDeNomeEnte(rs.getString("de_nome_ente"));
         ente.setCdStatoEnte(rs.getString("cd_stato_ente"));
         return ente;

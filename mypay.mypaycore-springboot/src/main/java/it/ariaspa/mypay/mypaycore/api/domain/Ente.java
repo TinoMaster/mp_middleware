@@ -30,6 +30,16 @@ public class Ente {
     private String deNomeEnte;
 
     /**
+     * Codice fiscale dell'ente pubblico (es. "80007580279").
+     * Corrisponde alla colonna {@code codice_fiscale_ente} in {@code mygov_ente}.
+     *
+     * <p>Usato come chiave alternativa per l'identificazione dell'ente:
+     * molti endpoint SOAP MyPay usano {@code <identificativoDominio>} (che contiene
+     * il codice fiscale) al posto di {@code <codIpaEnte>} nell'header SOAP.
+     */
+    private String codiceFiscaleEnte;
+
+    /**
      * Codice stato dell'ente nel sistema.
      * Non viene usato per la validazione del routing.
      */
@@ -45,6 +55,7 @@ public class Ente {
     public String toString() {
         return "Ente{" +
                 "codIpaEnte='" + codIpaEnte + '\'' +
+                ", codiceFiscaleEnte='" + codiceFiscaleEnte + '\'' +
                 ", deNomeEnte='" + deNomeEnte + '\'' +
                 '}';
     }

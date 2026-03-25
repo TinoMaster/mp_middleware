@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "mypay-middleware-dev",
-    "name": "MyPay Middleware — Test DEV (profilo dev, PU UAT reale)",
-    "description": "Collection per testare il flusso end-to-end SIL → Middleware → Piattaforma Unitaria (ambiente UAT reale).\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata con il client-secret OAuth2\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo su localhost:5432/mypay_local_copy (user: admin, password: admin)\n\nFlusso reale:\n1. SIL invia richiesta SOAP al middleware\n2. Middleware ottiene token OAuth2 dalla PU (endpoint reale UAT)\n3. Middleware inoltra l'Envelope SOAP completo alla PU con il Bearer token\n4. PU elabora la richiesta e restituisce la risposta\n5. Middleware estrae il body dalla risposta PU e lo restituisce al SIL\n\nNOTA: Il SIL NON invia JWT. L'autenticazione SIL avviene tramite codIpaEnte + password nel body SOAP. Il middleware gestisce internamente l'autenticazione OAuth2 verso la PU.",
+    "_postman_id": "mypay-middleware-dev-fase8",
+    "name": "MyPay Middleware — Test Completo Fase 8 (tutti gli endpoint SOAP)",
+    "description": "Collection completa Fase 8 per testare TUTTI i 40 endpoint SOAP MyPay + gli endpoint MyPivot attraverso il middleware.\n\nIl middleware si interpone tra i SIL (Sistemi Informativi Locali) e la Piattaforma Unitaria di pagoPA:\n- Riceve richieste SOAP dai SIL su localhost:8080\n- Gestisce autonomamente l'autenticazione OAuth2 verso la PU\n- Inoltra le richieste autenticate e restituisce le risposte\n\nIl SOAP servlet è mappato su /ws/* e Spring WS esegue il dispatch basandosi su namespace+localPart.\n\nEndpoint:\n- /ws/pa → operazioni MyPay PA (DovutiPagati, CCPPa, Esito, FlussiSPC)\n- /ws/fesp → operazioni MyPay FESP (CCP, CCP25, RT, RP, AvvisiDigitali)\n- /ws/pivot → operazioni MyPivot (Riconciliazione)\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo\n\nValori di test:\n- codIpaEnte: SELC_99999000013\n- identificativoDominio: 99999000013",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,11 +10,22 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "type": "string"
+    },
+    {
+      "key": "puClientSecret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "puBearerToken",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
       "name": "1. Diagnostica",
+      "description": "Health check del middleware. Verificano la raggiungibilità dei componenti: database, Piattaforma Unitaria, token OAuth2.",
       "item": [
         {
           "name": "1.1 Health Check Completo",
@@ -71,43 +82,31 @@
       ]
     },
     {
-      "name": "2. Flusso Principale SIL → Middleware → PU",
+      "name": "2. MyPivot — Riconciliazione",
+      "description": "Operazioni MyPivot per la riconciliazione dei flussi di tesoreria. Namespace: http://www.regione.veneto.it/pagamenti/pivot/ente/\nEndpoint: /ws/pivot/PagamentiTelematiciPagatiRiconciliati",
       "item": [
         {
-          "name": "2.1 [PRINCIPALE] pivotSILAutorizzaImportFlussoTesoreria — Tipo O (OPI)",
+          "name": "2.1 pivotSILAutorizzaImportFlussoTesoreria — Tipo O (OPI)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "// Verifica che la risposta sia 200 OK",
                   "pm.test('Status code is 200', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "// Verifica che la risposta sia XML",
                   "pm.test('Content-Type is text/xml', function () {",
                   "    pm.response.to.have.header('Content-Type');",
                   "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
                   "});",
                   "",
-                  "// Verifica che la risposta contenga il body SOAP atteso",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
                   "pm.test('Response contains pivotSILAutorizzaImportFlussoTesoreriaRisposta', function () {",
                   "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoTesoreriaRisposta');",
-                  "});",
-                  "",
-                  "// Verifica che i namespace siano corretti (Veneto)",
-                  "pm.test('Response uses correct Veneto namespace', function () {",
-                  "    pm.expect(pm.response.text()).to.include('regione.veneto.it/pagamenti/pivot/ente/');",
-                  "});",
-                  "",
-                  "// Verifica presenza dei campi principali nella risposta",
-                  "pm.test('Response contains uploadUrl', function () {",
-                  "    pm.expect(pm.response.text()).to.include('uploadUrl');",
-                  "});",
-                  "",
-                  "pm.test('Response contains requestToken', function () {",
-                  "    pm.expect(pm.response.text()).to.include('requestToken');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -134,32 +133,33 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati",
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
               "host": ["{{baseUrl}}"],
-              "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
             },
-            "description": "CHIAMATA PRINCIPALE — Simula un SIL che richiede l'autorizzazione per importare un flusso di tesoreria OPI.\n\nFlusso interno automatico:\n1. Middleware riceve la richiesta SOAP (ReconciliationEndpoint)\n2. Middleware estrae l'Envelope SOAP completo (Header + Body)\n3. OAuthTokenService ottiene/riutilizza il token OAuth2 dalla PU reale\n4. PiattaformaUnitariaClient inoltra l'Envelope completo alla PU UAT con Bearer token\n5. PU elabora la richiesta e restituisce la risposta SOAP\n6. Middleware estrae il body dalla risposta PU e lo restituisce al SIL\n\nParametri della richiesta:\n- codIpaEnte: SELC_99999000013 (ente di test in UAT)\n- password: BERGAMO\n- tipoFlusso: O (flusso OPI - Ordinativi di Pagamento e Incasso)\n\nRisposta attesa dalla PU:\n- pivotSILAutorizzaImportFlussoTesoreriaRisposta con:\n  - uploadUrl: URL per il caricamento del file\n  - authorizationToken: token per l'upload\n  - requestToken: identificativo della richiesta\n  - importPath: percorso di importazione"
+            "description": "Richiesta di autorizzazione per importare un flusso di tesoreria OPI (tipoFlusso=O).\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: SELC_99999000013\n- password: BERGAMO\n- tipoFlusso: O (Ordinativi di Pagamento e Incasso)"
           }
         },
         {
-          "name": "2.2 [PRINCIPALE] pivotSILAutorizzaImportFlussoTesoreria — Tipo F (Finanziario)",
+          "name": "2.2 pivotSILAutorizzaImportFlussoTesoreria — Tipo F (Finanziario)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "// Verifica che la risposta sia 200 OK",
                   "pm.test('Status code is 200', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "// Verifica che la risposta sia XML",
                   "pm.test('Content-Type is text/xml', function () {",
                   "    pm.response.to.have.header('Content-Type');",
                   "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
                   "});",
                   "",
-                  "// Verifica che la risposta contenga il body SOAP atteso",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
                   "pm.test('Response contains pivotSILAutorizzaImportFlussoTesoreriaRisposta', function () {",
                   "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoTesoreriaRisposta');",
                   "});"
@@ -188,32 +188,2124 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati",
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
               "host": ["{{baseUrl}}"],
-              "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
             },
-            "description": "Variante con tipoFlusso=F (flusso finanziario).\n\nStesso flusso della richiesta 2.1, ma con tipoFlusso diverso.\nVerifica che la PU gestisca correttamente anche i flussi finanziari."
+            "description": "Variante con tipoFlusso=F (flusso finanziario).\n\nStesso flusso della richiesta 2.1, ma con tipoFlusso diverso."
           }
         }
       ]
     },
     {
-      "name": "3. Test Diretti PU (senza middleware)",
-      "description": "Richieste dirette alla Piattaforma Unitaria UAT, bypassando il middleware.\nRichiedono un Bearer token valido nell'header Authorization.\n\nUtili per:\n- Verificare che la PU sia raggiungibile\n- Confrontare la risposta diretta con quella mediata dal middleware\n- Debug in caso di errori",
+      "name": "3. MyPay PA — DovutiPagati",
+      "description": "16 operazioni PA per la gestione di dovuti e pagati.\nNamespace body: http://www.regione.veneto.it/pagamenti/ente/\nNamespace header: http://www.regione.veneto.it/pagamenti/ente/ppthead\nEndpoint: POST {{baseUrl}}/ws/pa\nIdentificazione ente: codIpaEnte nell'header SOAP",
       "item": [
         {
-          "name": "3.1 [Prerequisito] Ottieni Token OAuth2 dalla PU",
+          "name": "3.1 paaSILImportaDovuto",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "// Verifica risposta 200",
                   "pm.test('Status code is 200', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
-                  "// Salva il token per le richieste successive",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILImportaDovuto"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILImportaDovuto>\n            <password>TEST_PASSWORD</password>\n            <dovuto>TEST_DOVUTO_BASE64</dovuto>\n        </ente:paaSILImportaDovuto>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Importa un singolo dovuto per l'ente.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILImportaDovuto"
+          }
+        },
+        {
+          "name": "3.2 paaSILAutorizzaImportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILAutorizzaImportFlusso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILAutorizzaImportFlusso>\n            <password>TEST_PASSWORD</password>\n        </ente:paaSILAutorizzaImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Autorizza l'importazione di un flusso di dovuti.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILAutorizzaImportFlusso"
+          }
+        },
+        {
+          "name": "3.3 paaSILChiediEsitoCarrelloDovuti",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediEsitoCarrelloDovuti"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediEsitoCarrelloDovuti>\n            <password>TEST_PASSWORD</password>\n            <idCarrello>TEST_CARRELLO_ID</idCarrello>\n        </ente:paaSILChiediEsitoCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Chiede l'esito di un carrello di dovuti precedentemente inviato.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediEsitoCarrelloDovuti"
+          }
+        },
+        {
+          "name": "3.4 paaSILChiediPagati",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediPagati"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagati>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagati>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede l'elenco dei pagamenti effettuati.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediPagati"
+          }
+        },
+        {
+          "name": "3.5 paaSILChiediPagatiConRicevuta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediPagatiConRicevuta"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPagatiConRicevuta>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediPagatiConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede i pagamenti con la ricevuta telematica associata.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediPagatiConRicevuta"
+          }
+        },
+        {
+          "name": "3.6 paaSILChiediPosizioniAperte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediPosizioniAperte"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediPosizioniAperte>\n            <password>TEST_PASSWORD</password>\n            <codiceFiscaleDebitore>RSSMRA80A01H501U</codiceFiscaleDebitore>\n        </ente:paaSILChiediPosizioniAperte>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede le posizioni debitorie aperte per un dato codice fiscale.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediPosizioniAperte"
+          }
+        },
+        {
+          "name": "3.7 paaSILChiediStatoExportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediStatoExportFlusso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoExportFlusso>\n            <password>TEST_PASSWORD</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Verifica lo stato di un'esportazione flusso precedentemente prenotata.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediStatoExportFlusso"
+          }
+        },
+        {
+          "name": "3.8 paaSILChiediStatoImportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediStatoImportFlusso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStatoImportFlusso>\n            <password>TEST_PASSWORD</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:paaSILChiediStatoImportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Verifica lo stato di un'importazione flusso precedentemente avviata.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediStatoImportFlusso"
+          }
+        },
+        {
+          "name": "3.9 paaSILChiediStoricoPagamenti",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediStoricoPagamenti"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILChiediStoricoPagamenti>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILChiediStoricoPagamenti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede lo storico dei pagamenti in un intervallo di date.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILChiediStoricoPagamenti"
+          }
+        },
+        {
+          "name": "3.10 paaSILInviaDovuti",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILInviaDovuti"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaDovuti>\n            <password>TEST_PASSWORD</password>\n            <dovuti>TEST_DOVUTI_BASE64</dovuti>\n        </ente:paaSILInviaDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Invia un elenco di dovuti all'ente.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILInviaDovuti"
+          }
+        },
+        {
+          "name": "3.11 paaSILInviaCarrelloDovuti",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILInviaCarrelloDovuti"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILInviaCarrelloDovuti>\n            <password>TEST_PASSWORD</password>\n            <carrello>TEST_CARRELLO_BASE64</carrello>\n        </ente:paaSILInviaCarrelloDovuti>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Invia un carrello di dovuti (invio multiplo).\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILInviaCarrelloDovuti"
+          }
+        },
+        {
+          "name": "3.12 paaSILPrenotaExportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILPrenotaExportFlusso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlusso>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlusso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Prenota l'esportazione di un flusso di pagamenti.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILPrenotaExportFlusso"
+          }
+        },
+        {
+          "name": "3.13 paaSILPrenotaExportFlussoIncrementaleConRicevuta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILPrenotaExportFlussoIncrementaleConRicevuta"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n            <password>TEST_PASSWORD</password>\n            <dateFrom>2024-01-01</dateFrom>\n            <dateTo>2024-12-31</dateTo>\n        </ente:paaSILPrenotaExportFlussoIncrementaleConRicevuta>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Prenota l'esportazione incrementale di un flusso con ricevuta.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILPrenotaExportFlussoIncrementaleConRicevuta"
+          }
+        },
+        {
+          "name": "3.14 paaSILRegistraPagamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILRegistraPagamento"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRegistraPagamento>\n            <password>TEST_PASSWORD</password>\n            <importoPagato>100.00</importoPagato>\n        </ente:paaSILRegistraPagamento>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Registra un pagamento effettuato dall'ente.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILRegistraPagamento"
+          }
+        },
+        {
+          "name": "3.15 paaSILVerificaAvviso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILVerificaAvviso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILVerificaAvviso>\n            <password>TEST_PASSWORD</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILVerificaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Verifica lo stato di un avviso di pagamento.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILVerificaAvviso"
+          }
+        },
+        {
+          "name": "3.16 paaSILRecuperaAvviso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILRecuperaAvviso"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/ente/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ente:paaSILRecuperaAvviso>\n            <password>TEST_PASSWORD</password>\n            <codiceAvviso>0000000000000000000</codiceAvviso>\n        </ente:paaSILRecuperaAvviso>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Recupera i dettagli di un avviso di pagamento.\n\nNamespace: http://www.regione.veneto.it/pagamenti/ente/\nDispatch Spring WS: localPart=paaSILRecuperaAvviso"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. MyPay PA — CCPPa",
+      "description": "4 operazioni PA per il Codice Contesto Pagamento (CCP) lato PA.\nNamespace body: http://www.regione.veneto.it/pagamenti/pa/\nNamespace header: http://www.regione.veneto.it/pagamenti/pa/ppthead\nEndpoint: POST {{baseUrl}}/ws/pa\nIdentificazione ente: identificativoDominio (codice fiscale) nell'header SOAP",
+      "item": [
+        {
+          "name": "4.1 paaSILAttivaRP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILAttivaRP"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILAttivaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILAttivaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Attiva una Richiesta di Pagamento (RP) lato PA.\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paaSILAttivaRP"
+          }
+        },
+        {
+          "name": "4.2 paaSILVerificaRP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILVerificaRP"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILVerificaRP>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILVerificaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Verifica una Richiesta di Pagamento (RP) lato PA.\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paaSILVerificaRP"
+          }
+        },
+        {
+          "name": "4.3 paVerifyPaymentNotice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paVerifyPaymentNotice"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paVerifyPaymentNotice>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paVerifyPaymentNotice>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Verifica un avviso di pagamento (nuovo protocollo pagoPA).\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paVerifyPaymentNotice"
+          }
+        },
+        {
+          "name": "4.4 paGetPayment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paGetPayment"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paGetPayment>\n            <qrCode>TEST_QR_CODE</qrCode>\n        </pa:paGetPayment>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Recupera i dettagli di un pagamento (nuovo protocollo pagoPA).\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paGetPayment"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. MyPay PA — Esito",
+      "description": "1 operazione PA per l'invio dell'esito di un pagamento.\nNamespace body: http://www.regione.veneto.it/pagamenti/pa/\nNamespace header: http://www.regione.veneto.it/pagamenti/pa/ppthead\nEndpoint: POST {{baseUrl}}/ws/pa\nIdentificazione ente: identificativoDominio nell'header SOAP",
+      "item": [
+        {
+          "name": "5.1 paaSILInviaEsito",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILInviaEsito"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pa/ppthead\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <pa:paaSILInviaEsito>\n            <esito>OK</esito>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </pa:paaSILInviaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Invia l'esito di un pagamento alla PA.\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paaSILInviaEsito"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. MyPay PA — FlussiSPC",
+      "description": "2 operazioni PA per la gestione dei flussi SPC.\nNamespace body: http://www.regione.veneto.it/pagamenti/pa/\nEndpoint: POST {{baseUrl}}/ws/pa\nATTENZIONE: Queste operazioni NON hanno SOAP header. Il codIpaEnte è nel body.",
+      "item": [
+        {
+          "name": "6.1 paaSILChiediFlussoSPC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediFlussoSPC"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediFlussoSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </pa:paaSILChiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede un flusso SPC specifico. NESSUN SOAP header — codIpaEnte nel body.\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paaSILChiediFlussoSPC"
+          }
+        },
+        {
+          "name": "6.2 paaSILChiediElencoFlussiSPC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaSILChiediElencoFlussiSPC"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:pa=\"http://www.regione.veneto.it/pagamenti/pa/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <pa:paaSILChiediElencoFlussiSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n        </pa:paaSILChiediElencoFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pa",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pa"]
+            },
+            "description": "Richiede l'elenco dei flussi SPC disponibili. NESSUN SOAP header — codIpaEnte nel body.\n\nNamespace: http://www.regione.veneto.it/pagamenti/pa/\nDispatch Spring WS: localPart=paaSILChiediElencoFlussiSPC"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. MyPay FESP — CCP",
+      "description": "2 operazioni FESP per il Codice Contesto Pagamento (protocollo legacy).\nNamespace body: http://ws.pagamenti.telematici.gov/\nNamespace header: http://ws.pagamenti.telematici.gov/ppthead\nEndpoint: POST {{baseUrl}}/ws/fesp\nIdentificazione ente: identificativoDominio nell'header SOAP",
+      "item": [
+        {
+          "name": "7.1 paaVerificaRPT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaVerificaRPT"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaVerificaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n        </ws:paaVerificaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Verifica una RPT (Richiesta di Pagamento Telematico) lato FESP.\n\nNamespace: http://ws.pagamenti.telematici.gov/\nDispatch Spring WS: localPart=paaVerificaRPT"
+          }
+        },
+        {
+          "name": "7.2 paaAttivaRPT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaAttivaRPT"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaAttivaRPT>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <datiPagamentoPSP>TEST_DATI</datiPagamentoPSP>\n        </ws:paaAttivaRPT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Attiva una RPT (Richiesta di Pagamento Telematico) lato FESP.\n\nNamespace: http://ws.pagamenti.telematici.gov/\nDispatch Spring WS: localPart=paaAttivaRPT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. MyPay FESP — CCP25",
+      "description": "5 operazioni FESP per il nuovo protocollo pagoPA (CCP versione 2.5).\nNamespace body: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nEndpoint: POST {{baseUrl}}/ws/fesp\nATTENZIONE: Queste operazioni NON hanno SOAP header. L'identificazione ente avviene tramite idPA nel body.",
+      "item": [
+        {
+          "name": "8.1 paVerifyPaymentNoticeReq",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paVerifyPaymentNoticeReq"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paVerifyPaymentNoticeReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paVerifyPaymentNoticeReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Verifica un avviso di pagamento (nuovo protocollo pagoPA CCP25).\nNessun SOAP header — idPA nel body.\n\nNamespace: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nDispatch Spring WS: localPart=paVerifyPaymentNoticeReq"
+          }
+        },
+        {
+          "name": "8.2 paGetPaymentReq",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paGetPaymentReq"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Recupera i dettagli di un pagamento (nuovo protocollo pagoPA CCP25).\nNessun SOAP header — idPA nel body.\n\nNamespace: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nDispatch Spring WS: localPart=paGetPaymentReq"
+          }
+        },
+        {
+          "name": "8.3 paSendRTReq",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paSendRTReq"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTReq>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <receipt>TEST_RECEIPT_BASE64</receipt>\n        </paf:paSendRTReq>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia una Ricevuta Telematica (RT) alla PA (nuovo protocollo pagoPA CCP25).\nNessun SOAP header — idPA nel body.\n\nNamespace: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nDispatch Spring WS: localPart=paSendRTReq"
+          }
+        },
+        {
+          "name": "8.4 paSendRTV2Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paSendRTV2Request"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paSendRTV2Request>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <receipt>TEST_RECEIPT_V2_BASE64</receipt>\n        </paf:paSendRTV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia una Ricevuta Telematica versione 2 (RT V2) alla PA.\nNessun SOAP header — idPA nel body.\n\nNamespace: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nDispatch Spring WS: localPart=paSendRTV2Request"
+          }
+        },
+        {
+          "name": "8.5 paGetPaymentV2Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paGetPaymentV2Request"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:paf=\"http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <paf:paGetPaymentV2Request>\n            <idPA>99999000013</idPA>\n            <idBrokerPA>99999000013</idBrokerPA>\n            <idStation>99999000013_01</idStation>\n            <qrCode>\n                <fiscalCode>99999000013</fiscalCode>\n                <noticeNumber>000000000000000000</noticeNumber>\n            </qrCode>\n        </paf:paGetPaymentV2Request>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Recupera i dettagli di un pagamento versione 2 (nuovo protocollo pagoPA CCP25).\nNessun SOAP header — idPA nel body.\n\nNamespace: http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd\nDispatch Spring WS: localPart=paGetPaymentV2Request"
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. MyPay FESP — RT",
+      "description": "1 operazione FESP per la Ricevuta Telematica (protocollo legacy).\nNamespace body: http://ws.pagamenti.telematici.gov/\nNamespace header: http://ws.pagamenti.telematici.gov/ppthead\nEndpoint: POST {{baseUrl}}/ws/fesp",
+      "item": [
+        {
+          "name": "9.1 paaInviaRT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "paaInviaRT"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://ws.pagamenti.telematici.gov/ppthead\"\n    xmlns:ws=\"http://ws.pagamenti.telematici.gov/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <ws:paaInviaRT>\n            <tipoFirma>0</tipoFirma>\n            <rt>TEST_RT_BASE64</rt>\n        </ws:paaInviaRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia una Ricevuta Telematica (RT) tramite il protocollo legacy FESP.\n\nNamespace: http://ws.pagamenti.telematici.gov/\nDispatch Spring WS: localPart=paaInviaRT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. MyPay FESP — RP",
+      "description": "8 operazioni FESP per la gestione delle Richieste di Pagamento.\nNamespace body: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nEndpoint: POST {{baseUrl}}/ws/fesp\n\nNOTA: Solo nodoSILInviaRP ha un SOAP header (namespace ppthead con identificativoDominio). Le altre operazioni hanno codIpaEnte nel body.",
+      "item": [
+        {
+          "name": "10.1 chiediFlussoSPC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "chiediFlussoSPC"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </nrf:chiediFlussoSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede un flusso SPC specifico tramite FESP. codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=chiediFlussoSPC"
+          }
+        },
+        {
+          "name": "10.2 chiediFlussoSPCPage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "chiediFlussoSPCPage"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediFlussoSPCPage>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n            <pageNumber>0</pageNumber>\n            <pageSize>100</pageSize>\n        </nrf:chiediFlussoSPCPage>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede un flusso SPC con paginazione tramite FESP. codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=chiediFlussoSPCPage"
+          }
+        },
+        {
+          "name": "10.3 chiediListaFlussiSPC",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "chiediListaFlussiSPC"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:chiediListaFlussiSPC>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n        </nrf:chiediListaFlussiSPC>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede l'elenco dei flussi SPC disponibili tramite FESP. codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=chiediListaFlussiSPC"
+          }
+        },
+        {
+          "name": "10.4 nodoSILChiediCopiaEsito",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILChiediCopiaEsito"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediCopiaEsito>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n        </nrf:nodoSILChiediCopiaEsito>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede una copia dell'esito di un pagamento. codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILChiediCopiaEsito"
+          }
+        },
+        {
+          "name": "10.5 nodoSILInviaRP (CON header)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILInviaRP"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/ppthead\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <identificativoDominio>99999000013</identificativoDominio>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n    <soapenv:Body>\n        <nrf:nodoSILInviaRP>\n            <password>TEST_PASSWORD</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <tipoFirma>0</tipoFirma>\n            <rp>TEST_RP_BASE64</rp>\n        </nrf:nodoSILInviaRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia una Richiesta di Pagamento (RP) al nodo FESP.\nQuesta è l'UNICA operazione RP con SOAP header (ppthead con identificativoDominio).\n\nNamespace body: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nNamespace header: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/ppthead\nDispatch Spring WS: localPart=nodoSILInviaRP"
+          }
+        },
+        {
+          "name": "10.6 nodoSILChiediIUV",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILChiediIUV"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILChiediIUV>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <tipoVersamento>ALL</tipoVersamento>\n            <tipoGeneratore>0</tipoGeneratore>\n        </nrf:nodoSILChiediIUV>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede un nuovo IUV (Identificativo Univoco Versamento). codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILChiediIUV"
+          }
+        },
+        {
+          "name": "10.7 nodoSILInviaCarrelloRP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILInviaCarrelloRP"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaCarrelloRP>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoPSP>TEST_PSP</identificativoPSP>\n            <listaRP>TEST_LISTA_RP_BASE64</listaRP>\n        </nrf:nodoSILInviaCarrelloRP>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia un carrello di Richieste di Pagamento (RP multiple). codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILInviaCarrelloRP"
+          }
+        },
+        {
+          "name": "10.8 nodoSILRichiediRT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILRichiediRT"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILRichiediRT>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </nrf:nodoSILRichiediRT>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Richiede una Ricevuta Telematica (RT) per un pagamento specifico. codIpaEnte nel body (nessun header SOAP).\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILRichiediRT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. MyPay FESP — AvvisiDigitali",
+      "description": "1 operazione FESP per l'invio degli avvisi digitali.\nNamespace body: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nEndpoint: POST {{baseUrl}}/ws/fesp",
+      "item": [
+        {
+          "name": "11.1 nodoSILInviaAvvisoDigitale",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml;charset=UTF-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "nodoSILInviaAvvisoDigitale"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:nrf=\"http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n        <nrf:nodoSILInviaAvvisoDigitale>\n            <codIpaEnte>SELC_99999000013</codIpaEnte>\n            <password>TEST_PASSWORD</password>\n            <avvisoDigitale>TEST_AVVISO_BASE64</avvisoDigitale>\n        </nrf:nodoSILInviaAvvisoDigitale>\n    </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {"language": "xml"}
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/fesp",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "fesp"]
+            },
+            "description": "Invia un avviso digitale tramite il nodo FESP.\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILInviaAvvisoDigitale"
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Test Diretti PU (senza middleware)",
+      "description": "Richieste dirette alla Piattaforma Unitaria UAT, bypassando il middleware.\nRichiedono un Bearer token valido nell'header Authorization.\n\nUtili per:\n- Verificare che la PU sia raggiungibile\n- Confrontare la risposta diretta con quella mediata dal middleware\n- Debug in caso di errori",
+      "item": [
+        {
+          "name": "12.1 [Prerequisito] Ottieni Token OAuth2 dalla PU",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
                   "var jsonData = pm.response.json();",
                   "pm.test('Response contains access_token', function () {",
                   "    pm.expect(jsonData).to.have.property('access_token');",
@@ -256,7 +2348,7 @@
           }
         },
         {
-          "name": "3.2 [Diretta PU] pivotSILAutorizzaImportFlussoTesoreria",
+          "name": "12.2 [Diretta PU] pivotSILAutorizzaImportFlussoTesoreria",
           "request": {
             "method": "POST",
             "header": [
@@ -282,7 +2374,7 @@
               "host": ["api", "uat", "p4pa", "pagopa", "it"],
               "path": ["pu", "sil", "soap", "reconciliation", "PagamentiTelematiciPagatiRiconciliati"]
             },
-            "description": "Richiesta SOAP diretta alla PU UAT (bypassando il middleware).\n\nPre-requisito: Eseguire prima la richiesta 3.1 per ottenere il Bearer token.\n\nUtile per confrontare la risposta diretta della PU con quella mediata dal middleware e verificare che il proxy trasparente funzioni correttamente."
+            "description": "Richiesta SOAP diretta alla PU UAT (bypassando il middleware).\n\nPre-requisito: Eseguire prima la richiesta 12.1 per ottenere il Bearer token.\n\nUtile per confrontare la risposta diretta della PU con quella mediata dal middleware e verificare che il proxy trasparente funzioni correttamente."
           }
         }
       ]

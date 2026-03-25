@@ -32,14 +32,16 @@ collection Postman e documentazione delle procedure di test.
 
 ### Cosa fa il middleware
 
-`mypay.mypaycore` è un **proxy SOAP autenticante**:
+`mypay.mypaycore` è un **proxy SOAP autenticante** che espone **40 operazioni SOAP** su
+**10 endpoint** (9 MyPay + 1 MyPivot) ai SIL:
 
 ```
 SIL (Ente Pubblico)  →  MIDDLEWARE (questo progetto)  →  Piattaforma Unitaria (pagoPA)
     SOAP Request            1. Riceve Envelope SOAP
-    codIpaEnte + password   2. Ottiene/rinnova token OAuth2
-    (NO JWT, NO Bearer)     3. Inoltra con Bearer token
-                            4. Restituisce body risposta al SIL
+    codIpaEnte + password   2. Routing dinamico per ente (DB + cache)
+    (NO JWT, NO Bearer)     3. Ottiene/rinnova token OAuth2
+                            4. Inoltra con Bearer token
+                            5. Restituisce body risposta al SIL
 ```
 
 ### Stack tecnologico
@@ -50,7 +52,7 @@ SIL (Ente Pubblico)  →  MIDDLEWARE (questo progetto)  →  Piattaforma Unitari
 | Java | Oracle JDK 17 |
 | Build | Maven multi-modulo |
 | SOAP Server | Spring Web Services (`@Endpoint`) |
-| Database | PostgreSQL + HikariCP + JPA/Hibernate |
+| Database | PostgreSQL + HikariCP + Jdbi |
 | Resilienza | Resilience4j (Circuit Breaker + Retry) |
 | Test | JUnit 5 + Mockito + Spring Test |
 
@@ -80,160 +82,103 @@ mypay.mypaycore/
 │       ├── main/java/it/ariaspa/mypay/mypaycore/api/
 │       │   ├── Application.java
 │       │   ├── config/
-│       │   │   ├── DataSourceConfig.java
+│       │   │   ├── DataSourceConfiguration.java
+│       │   │   ├── JdbiConfiguration.java
 │       │   │   ├── PiattaformaUnitariaConfig.java
-│       │   │   └── SoapWebServiceConfig.java
+│       │   │   ├── SoapWebServiceConfig.java
+│       │   │   ├── BackendRoutingConfig.java
+│       │   │   └── PathRegistryConfig.java
 │       │   ├── auth/
 │       │   │   ├── OAuthTokenService.java
-│       │   │   ├── OAuthTokenInterceptor.java
 │       │   │   └── dto/OAuthTokenResponse.java
 │       │   ├── client/
-│       │   │   └── PiattaformaUnitariaClient.java
+│       │   │   ├── PiattaformaUnitariaClient.java
+│       │   │   └── ProxyForwardingClient.java
 │       │   ├── soap/
 │       │   │   ├── endpoint/
-│       │   │   │   └── ReconciliationEndpoint.java
+│       │   │   │   ├── AbstractSoapProxyEndpoint.java  ← classe base per tutti gli endpoint
+│       │   │   │   ├── mypay/                          ← 4 endpoint MyPay
+│       │   │   │   │   ├── PagamentiTelematiciDovutiPagatiEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciEsitoEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciFlussiSPCEndpoint.java
+│       │   │   │   │   └── PagamentiTelematiciCCPPaEndpoint.java
+│       │   │   │   ├── mypay/fesp/                     ← 5 endpoint MyPay FESP
+│       │   │   │   │   ├── PagamentiTelematiciCCPEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciCCP25Endpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciRPEndpoint.java
+│       │   │   │   │   ├── PagamentiTelematiciRTEndpoint.java
+│       │   │   │   │   └── PagamentiTelematiciAvvisiDigitaliEndpoint.java
+│       │   │   │   └── mypivot/                        ← 1 endpoint MyPivot
+│       │   │   │       └── ReconciliationEndpoint.java
 │       │   │   └── exception/
 │       │   │       └── SoapFaultExceptionResolver.java
+│       │   ├── domain/
+│       │   │   ├── Ente.java
+│       │   │   ├── EnteConfigPu.java
+│       │   │   ├── EnteCompleto.java
+│       │   │   ├── ModalitaRouting.java
+│       │   │   └── TransactionLog.java
+│       │   ├── repository/
+│       │   │   ├── EnteRepository.java
+│       │   │   ├── EnteCacheService.java           ← cache duale (codIpa + codiceFiscale)
+│       │   │   ├── EnteConfigPuRepository.java
+│       │   │   └── TransactionLogRepository.java
+│       │   ├── routing/
+│       │   │   ├── RoutingDecisionService.java
+│       │   │   └── RoutingDecision.java
+│       │   ├── logging/
+│       │   │   └── TransactionLoggingService.java
+│       │   ├── metrics/
+│       │   │   └── MiddlewareMetricsService.java
 │       │   ├── common/exception/
 │       │   │   ├── PiattaformaAuthenticationException.java
-│       │   │   └── PiattaformaCommunicationException.java
+│       │   │   ├── PiattaformaCommunicationException.java
+│       │   │   ├── EnteNonCensitoException.java
+│       │   │   └── PathNonRiconosciutoException.java
 │       │   └── health/
 │       │       ├── OAuthTokenHealthIndicator.java
-│       │       └── PiattaformaUnitariaHealthIndicator.java
-│       ├── test/java/it/ariaspa/mypay/mypaycore/api/
-│       │   ├── auth/
-│       │   │   └── OAuthTokenServiceTest.java           ← 9 test
-│       │   ├── client/
-│       │   │   └── PiattaformaUnitariaClientTest.java   ← 7 test
-│       │   └── soap/endpoint/
-│       │       └── ReconciliationEndpointTest.java       ← 6 test
-│       └── test/resources/config/
-│           └── application.properties                    ← config test
+│       │       ├── PiattaformaUnitariaHealthIndicator.java
+│       │       └── EnteConfigHealthIndicator.java
 ├── requests/
-│   └── MyPay-Middleware-Dev.postman_collection.json      ← collection Postman
+│   └── MyPay-Middleware-Dev.postman_collection.json      ← collection Postman (48 richieste)
 └── docs/procedures/
     └── GUIDA_TEST_POSTMAN_END_TO_END.md                 ← guida test E2E
 ```
 
 ---
 
-## Test esistenti — Inventario completo
+## Test unitari — Stato attuale
 
-### OAuthTokenServiceTest (9 test) — `api/auth/`
+I test unitari originali (22 test: `OAuthTokenServiceTest`, `PiattaformaUnitariaClientTest`,
+`ReconciliationEndpointTest`) sono stati **eliminati** durante il refactoring multi-ente della Fase 7/8.
+La directory `src/test/java/` e `src/test/resources/` **non esistono più** nel progetto.
 
-| # | DisplayName | Cosa verifica |
-|---|------------|---------------|
-| 1 | `getAccessToken - richiede nuovo token quando cache e vuota` | Prima richiesta token |
-| 2 | `getAccessToken - restituisce token dalla cache alla seconda chiamata` | Cache hit |
-| 3 | `refreshToken - invalida cache e richiede nuovo token` | Refresh forzato |
-| 4 | `getAccessToken - lancia PiattaformaAuthenticationException su risposta null` | Body null |
-| 5 | `getAccessToken - lancia PiattaformaAuthenticationException su access_token null` | Token null |
-| 6 | `getAccessToken - lancia PiattaformaAuthenticationException su errore di rete` | RestClientException |
-| 7 | `invalidateToken - il prossimo getAccessToken richiede un nuovo token` | Invalidazione |
-| 8 | `isTokenValid - ritorna false quando nessun token e stato richiesto` | Stato iniziale |
-| 9 | `isTokenValid - ritorna true dopo aver ottenuto un token valido` | Stato dopo token |
+Al momento **non ci sono test unitari**. Tutti i componenti sono da testare da zero.
 
-**Pattern chiave**:
-- `@ExtendWith(MockitoExtension.class)`
-- Mock di `RestTemplate`, costruzione manuale di `PiattaformaUnitariaConfig` nel `@BeforeEach`
-- Helper privati: `stubTokenRequest()`, `stubTokenRequestSequential()`, `stubTokenRequestThrow()`,
-  `verifyTokenRequestCount()`
-- L'URL è matchato con `argThat((String url) -> url != null && url.startsWith(TOKEN_URL))`
-  perché i parametri OAuth2 vanno come query string
-
-### PiattaformaUnitariaClientTest (7 test) — `api/client/`
-
-| # | DisplayName | Cosa verifica |
-|---|------------|---------------|
-| 1 | `forwardSoapRequest - inoltra richiesta e restituisce risposta` | Flusso OK |
-| 2 | `forwardSoapRequest - retry con nuovo token su 401 Unauthorized` | Retry su 401 |
-| 3 | `forwardSoapRequest - lancia PiattaformaAuthenticationException se retry 401 fallisce` | Doppio 401 |
-| 4 | `forwardSoapRequest - lancia PiattaformaCommunicationException su errore HTTP 500` | Errore server |
-| 5 | `forwardSoapRequest - lancia PiattaformaCommunicationException su errore HTTP 400` | Bad request |
-| 6 | `forwardSoapRequest - lancia PiattaformaCommunicationException su timeout` | Timeout rete |
-| 7 | `forwardSoapRequestFallback - lancia PiattaformaCommunicationException con messaggio circuit breaker` | Fallback CB |
-
-**Pattern chiave**:
-- Mock di `RestTemplate`, `OAuthTokenInterceptor`, `OAuthTokenService`
-- Costruttore 4 argomenti + `client.init()` nel `@BeforeEach`
-- Costanti: `BASE_URL`, `PATH`, `SOAP_REQUEST`, `SOAP_RESPONSE`
-
-### ReconciliationEndpointTest (6 test) — `api/soap/endpoint/`
-
-| # | DisplayName | Cosa verifica |
-|---|------------|---------------|
-| 1 | `handleReconciliationRequest - inoltra l'Envelope completo e restituisce il body della risposta` | Flusso completo |
-| 2 | `handleReconciliationRequest - l'Envelope inoltrato contiene l'Header con codIpaEnte` | Header preservato |
-| 3 | `handleReconciliationRequest - lancia RuntimeException su errore del client` | Gestione errori |
-| 4 | `handleReconciliationRequest - preserva il namespace veneto nella risposta` | Namespace corretto |
-| 5 | `NAMESPACE_URI - utilizza il namespace corretto della PU (veneto)` | Costante namespace body |
-| 6 | `HEADER_NAMESPACE_URI - utilizza il namespace corretto per l'header (ppthead)` | Costante namespace header |
-
-**Pattern chiave**:
-- Mock di `PiattaformaUnitariaClient`, `MessageContext`, `SoapMessage`
-- Helper `setupMessageContextMock()` per simulare `SoapMessage.writeTo()`
-- Helper `createTestElement()` per creare elementi DOM di test
-- `TEST_SOAP_ENVELOPE` come costante con Envelope completo
-- `ArgumentCaptor` per catturare l'Envelope inoltrato al client
-
-### Componenti NON ancora testati
+### Componenti da testare — Priorità
 
 | Componente | Tipo | Priorità | Note |
 |-----------|------|----------|------|
-| `SoapFaultExceptionResolver` | Unit test | Alta | Mappa eccezioni → SOAP Fault |
-| `OAuthTokenHealthIndicator` | Unit test | Media | Health check token OAuth2 |
-| `PiattaformaUnitariaHealthIndicator` | Unit test | Media | Health check raggiungibilità PU |
-| `OAuthTokenInterceptor` | Unit test | Media | Inietta Bearer token |
-| `DataSourceConfig` | Integration test | Bassa | Configurazione HikariCP/JPA |
-| `SoapWebServiceConfig` | Integration test | Bassa | Configurazione Spring WS |
+| `AbstractSoapProxyEndpoint` | Unit test | **Critica** | Classe base per tutti i 10 endpoint — testare logica condivisa |
+| 9 endpoint SOAP MyPay/FESP | Unit test | **Alta** | `PagamentiTelematici*Endpoint` — verificare mapping, namespace, inoltro |
+| `EnteCacheService` | Unit test | **Alta** | Cache duale (codIpa + codiceFiscale), refresh, `EnteNonCensitoException` |
+| `RoutingDecisionService` | Unit test | **Alta** | Routing dinamico per ente, lookup in cache + config backend |
+| `ProxyForwardingClient` | Unit test | **Alta** | Inoltro SOAP generico con routing dinamico |
+| `OAuthTokenService` | Unit test | **Alta** | Cache token, refresh, gestione errori OAuth2 |
+| `PiattaformaUnitariaClient` | Unit test | **Alta** | Inoltro HTTP, retry 401, circuit breaker, fallback |
+| `TransactionLoggingService` | Unit test | Media | Logging transazioni su DB via Jdbi |
+| `MiddlewareMetricsService` | Unit test | Media | Metriche Micrometer (contatori, timer) |
+| `SoapFaultExceptionResolver` | Unit test | Media | Mappa eccezioni → SOAP Fault |
+| Health indicators (3 classi) | Unit test | Media | Health check OAuth, PU, EnteConfig |
 | Flusso end-to-end | Integration test | Alta | `@SpringBootTest` + WireMock |
 
----
-
-## Configurazione di test
-
-### File: `src/test/resources/config/application.properties`
-
-```properties
-# Esclusioni autoconfigure: non serve DB ne JPA nei test unitari
-spring.autoconfigure.exclude[0]=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-spring.autoconfigure.exclude[1]=org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-spring.autoconfigure.exclude[2]=org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
-
-# Disabilita Spring Cloud Config nei test
-spring.cloud.config.enabled=false
-
-# Piattaforma Unitaria: punta a WireMock in test
-piattaforma-unitaria.base-url=http://localhost:${wiremock.server.port:8089}
-piattaforma-unitaria.auth.token-url=${piattaforma-unitaria.base-url}/pu/auth/oauth/token
-piattaforma-unitaria.auth.client-id=test-client-id
-piattaforma-unitaria.auth.client-secret=test-client-secret
-piattaforma-unitaria.auth.grant-type=client_credentials
-piattaforma-unitaria.auth.scope=openid
-
-# Resilience4j: parametri minimi nei test unitari
-resilience4j.circuitbreaker.instances.piattaformaUnitaria.sliding-window-size=5
-resilience4j.circuitbreaker.instances.piattaformaUnitaria.failure-rate-threshold=100
-resilience4j.retry.instances.piattaformaUnitaria.max-attempts=1
-
-# Actuator: solo health nei test
-management.endpoints.web.exposure.include=health
-
-# SpringLine2 Security: tutto anonimo nei test
-spl.security.jwt.cypher-secret=test-secret-key-for-unit-tests-only
-spl.security.jwt.token-validity=180000
-spl.security.authentication.anonymous.enabled=true
-spl.security.authentication.anonymous.uri-matchers=/**
-```
-
-**Punti chiave**:
-- La porta WireMock è parametrica (`${wiremock.server.port:8089}`) — pronta per test di integrazione
-- Resilience4j è rilassato: circuit breaker al 100%, retry 1 solo tentativo
-- SpringLine2 security tutto anonimo — se serve capire la configurazione, caricare la skill `springline2`
+**Nota**: quando si ricreano i test, sarà necessario ricreare anche `src/test/resources/config/application.properties`
+con le esclusioni autoconfigure, configurazione WireMock e SpringLine2 security anonima.
+Per il dettaglio completo del progetto, consultare `docs/guidelines/DOCUMENTAZIONE_TECNICA.md`.
 
 ---
 
-## Collection Postman — Struttura attuale
+## Collection Postman — Struttura attuale (48 richieste, 12 cartelle)
 
 ### File: `requests/MyPay-Middleware-Dev.postman_collection.json`
 
@@ -247,23 +192,52 @@ spl.security.authentication.anonymous.uri-matchers=/**
 | `puBearerToken` | (auto-impostato) | Token OAuth2 PU, scritto dal test 3.1 |
 | `puClientSecret` | (manuale) | Client secret OAuth2 per test diretti PU |
 
-**Struttura cartelle**:
+**Struttura cartelle (12 cartelle, 48 richieste)**:
 
 ```
-1. Diagnostica
+1. Diagnostica (4 richieste)
    ├── 1.1 Health Check Completo              (GET /actuator/health)
    ├── 1.2 Health Check — Solo Token OAuth2   (GET /actuator/health/OAuthToken)
    ├── 1.3 Health Check — Solo Piattaforma    (GET /actuator/health/piattaformaUnitaria)
    └── 1.4 Health Check — Solo Database       (GET /actuator/health/db)
 
-2. Flusso Principale SIL → Middleware → PU
-   ├── 2.1 [PRINCIPALE] pivotSIL...Tesoreria — Tipo O (OPI)     [con test script]
-   └── 2.2 [PRINCIPALE] pivotSIL...Tesoreria — Tipo F (Finanz.) [con test script]
+2. MyPivot — Riconciliazione (2 richieste)
+   ├── 2.1 [MyPivot] pivotSIL...Tesoreria — Tipo O (OPI)
+   └── 2.2 [MyPivot] pivotSIL...Tesoreria — Tipo F (Finanz.)
 
-3. Test Diretti PU (senza middleware)
-   ├── 3.1 [Prerequisito] Ottieni Token OAuth2 dalla PU          [con test script]
-   └── 3.2 [Diretta PU] pivotSIL...Tesoreria
+3. MyPay — PagamentiTelematiciDovutiPagati (5 richieste)
+   ├── 3.1 – 3.5 Operazioni dovuti/pagati
+
+4. MyPay — PagamentiTelematiciEsito (2 richieste)
+   ├── 4.1 – 4.2 Operazioni esito
+
+5. MyPay — PagamentiTelematiciFlussiSPC (6 richieste)
+   ├── 5.1 – 5.6 Operazioni flussi SPC
+
+6. MyPay — PagamentiTelematiciCCPPa (3 richieste)
+   ├── 6.1 – 6.3 Operazioni CCP PA
+
+7. FESP — PagamentiTelematiciCCP (7 richieste)
+   ├── 7.1 – 7.7 Operazioni CCP
+
+8. FESP — PagamentiTelematiciCCP25 (7 richieste)
+   ├── 8.1 – 8.7 Operazioni CCP 2.5
+
+9. FESP — PagamentiTelematiciRP (4 richieste)
+   ├── 9.1 – 9.4 Operazioni RP
+
+10. FESP — PagamentiTelematiciRT (4 richieste)
+    ├── 10.1 – 10.4 Operazioni RT
+
+11. FESP — PagamentiTelematiciAvvisiDigitali (1 richiesta)
+    └── 11.1 Operazione avvisi digitali
+
+12. Test Diretti PU (senza middleware) (2 richieste)
+    ├── 12.1 [Prerequisito] Ottieni Token OAuth2 dalla PU
+    └── 12.2 [Diretta PU] pivotSIL...Tesoreria
 ```
+
+**Totale**: 40 richieste MyPay/MyPivot + 4 diagnostica + 2 test diretti PU + 2 varianti = **48 richieste**
 
 **Pattern dei test script JavaScript** (usati nelle richieste 2.1, 2.2, 3.1):
 
@@ -379,12 +353,15 @@ class <NomeClasse>Test {
    ```bash
    cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypaycore-springboot -am -Denforcer.skip=true"
    ```
-6. **Verifica** che tutti i 22 test esistenti + i nuovi passino
+6. **Verifica** che tutti i test esistenti + i nuovi passino
 
 ### Come creare un test unitario per un nuovo endpoint SOAP
 
 1. **Segui** la procedura base per test unitari (sopra)
-2. **In più**, applica il pattern specifico dell'endpoint:
+2. **In più**, applica il pattern specifico dell'endpoint.
+   Dalla Fase 8, tutti gli endpoint ereditano da `AbstractSoapProxyEndpoint`, quindi
+   il test può concentrarsi su: mapping `@PayloadRoot` corretto, namespace, e delegazione
+   alla classe base per l'inoltro.
 
 ```java
 @ExtendWith(MockitoExtension.class)
@@ -514,9 +491,11 @@ class <Nome>IT {
 1. **Leggi** il file `requests/MyPay-Middleware-Dev.postman_collection.json`
 2. **Identifica** la cartella corretta (o crea una nuova cartella numerata):
    - `1. Diagnostica` — health check e diagnostica
-   - `2. Flusso Principale SIL → Middleware → PU` — richieste SOAP tramite middleware
-   - `3. Test Diretti PU (senza middleware)` — chiamate dirette alla PU
-   - Nuove cartelle: numerazione sequenziale (`4. ...`, `5. ...`)
+   - `2. MyPivot — Riconciliazione` — richieste SOAP MyPivot
+   - `3-6. MyPay — [Servizio]` — richieste SOAP MyPay (una cartella per servizio WSDL)
+   - `7-11. FESP — [Servizio]` — richieste SOAP FESP (una cartella per servizio WSDL)
+   - `12. Test Diretti PU (senza middleware)` — chiamate dirette alla PU
+   - Nuove cartelle: numerazione sequenziale (`13. ...`, etc.)
 3. **Crea la richiesta** seguendo la struttura JSON del collection v2.1.0:
 
 ```json
@@ -655,7 +634,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 | Situazione | Azione |
 |-----------|--------|
 | Decisione architetturale su come testare un componente complesso | Suggerisci di consultare **@expert** |
-| Aggiornare `Plan.md` o `DOCUMENTAZIONE_PRIMA_FASE.md` dopo l'aggiunta di test | Suggerisci di invocare **@planner** |
+| Aggiornare `Plan.md` o `DOCUMENTAZIONE_TECNICA.md` dopo l'aggiunta di test | Suggerisci di invocare **@planner** |
 | Test che coinvolgono configurazione SpringLine2 (security, logging, SOAP client) | Carica la skill **springline2** |
 | Query sul database per verificare dati di test | Usa il tool **mypay-db** |
 

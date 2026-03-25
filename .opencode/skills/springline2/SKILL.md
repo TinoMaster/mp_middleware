@@ -662,6 +662,6 @@ server:
 | DataSource | Configurazione manuale `DataSourceConfiguration.java` + `JdbiConfiguration.java` | Prefisso `spring.datasource.pa.*`, NON `spl.datasource.*` |
 | SOAP server | `spring-boot-starter-web-services` | `springline2-ws` usato solo come CLIENT verso pagoPA |
 | Autenticazione | Anonymous per endpoint `/ws/**` | I SIL chiamano via SOAP senza token |
-| Profili | `dev`, `uat`, `prod` | Profilo `local` rimosso intenzionalmente |
+| Profili | Solo `dev` attivo; `uat` e `prod` da creare | Profilo `local` rimosso intenzionalmente |
 | Logging | `logback-springline2.xml` | File separati per tipo di log |
 | Config | `application-{profilo}.yml` in `mypay.mypaycore-properties/` | Consul non ancora configurato |
