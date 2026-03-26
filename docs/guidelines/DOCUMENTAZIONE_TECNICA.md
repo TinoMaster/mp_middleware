@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.0.0  
-**Data**: 25 Marzo 2026  
-**Stato**: Fase 8 completata (25 Mar 2026) — 40 operazioni SOAP su 10 endpoint, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale (codIpa + codiceFiscale), 52 file sorgente
+**Versione**: 4.1.0  
+**Data**: 26 Marzo 2026  
+**Stato**: Fase 8 completata (25 Mar 2026) — 49 operazioni SOAP su 10 endpoint, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale (codIpa + codiceFiscale), 52 file sorgente; ReconciliationEndpoint (mypivot) completato con 10 operazioni
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -46,7 +46,7 @@
 I **SIL** (Sistemi Informativi Locali) degli enti pubblici (comuni, province, ecc.) devono comunicare con la **Piattaforma Unitaria** di pagoPA per gestire pagamenti, riconciliazioni e flussi di tesoreria. La Piattaforma Unitaria richiede autenticazione OAuth2, che i SIL non sono in grado di gestire autonomamente.
 
 Il middleware si interpone tra i due sistemi e:
-- Espone **40 operazioni SOAP** distribuite su **10 endpoint** ai SIL (9 MyPay + 1 MyPivot)
+- Espone **49 operazioni SOAP** distribuite su **10 endpoint** ai SIL (9 MyPay + 1 MyPivot)
 - Gestisce in autonomia l'**autenticazione OAuth2** verso pagoPA
 - Identifica l'ente tramite **ricerca generica** nel payload SOAP (`<codIpaEnte>` o `<identificativoDominio>`)
 - Supporta **routing dinamico** per ente (DB-driven) con **cache duale** (codIpa + codiceFiscale)
@@ -973,7 +973,7 @@ Il middleware espone **40 operazioni SOAP** distribuite su **10 endpoint** concr
 | 7 | `PagamentiTelematiciCCPEndpoint` | `http://ws.pagamenti.telematici.gov/` | 2 | `/ws/fesp` | `/pu/sil/soap/fesp/PagamentiTelematiciCCP` |
 | 8 | `PagamentiTelematiciRTEndpoint` | `http://ws.pagamenti.telematici.gov/` | 1 | `/ws/fesp` | `/pu/sil/soap/fesp/PagamentiTelematiciRT` |
 | 9 | `PagamentiTelematiciAvvisiDigitaliEndpoint` | `http://www.regione.veneto.it/pagamenti/nodoregionalefesp/` | 1 | `/ws/fesp` | `/pu/sil/soap/fesp/PagamentiTelematiciAvvisiDigitali` |
-| 10 | `ReconciliationEndpoint` | `http://www.regione.veneto.it/pagamenti/pivot/ente/` | 1 | `/ws/pivot` | `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati` |
+| 10 | `ReconciliationEndpoint` | `http://www.regione.veneto.it/pagamenti/pivot/ente/` | 10 | `/ws/pivot` | `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati` |
 
 ### `AbstractSoapProxyEndpoint.java` (classe base)
 
@@ -1109,11 +1109,11 @@ public class NomeEndpoint extends AbstractSoapProxyEndpoint {
 
 ### Esempio: `ReconciliationEndpoint.java` (MyPivot)
 
-L'endpoint MyPivot è il più semplice, con una sola operazione:
+L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFORM_PATH:
 - Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
-- Local part: `pivotSILAutorizzaImportFlussoTesoreria`
 - Path SIL: `/ws/pivot/PagamentiTelematiciPagatiRiconciliati`
 - Path PU: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
+- Operazioni: `pivotSILAutorizzaImportFlusso`, `pivotSILAutorizzaImportFlussoRendicontazione`, `pivotSILAutorizzaImportFlussoRT`, `pivotSILAutorizzaImportFlussoTesoreria`, `pivotSILChiediAccertamento`, `pivotSILChiediPagatiRiconciliati`, `pivotSILChiediStatoExportFlussoRiconciliazione`, `pivotSILChiediStatoImportFlusso`, `pivotSILChiediStatoImportFlussoTesoreria`, `pivotSILPrenotaExportFlussoRiconciliazione`
 
 ### Dettaglio operazioni per endpoint
 
@@ -1139,7 +1139,7 @@ L'endpoint MyPivot è il più semplice, con una sola operazione:
 
 **PagamentiTelematiciAvvisiDigitaliEndpoint (1 operazione)**: `nodoSILInviaAvvisoDigitale`
 
-**ReconciliationEndpoint (1 operazione)**: `pivotSILAutorizzaImportFlussoTesoreria`
+**ReconciliationEndpoint (10 operazioni)**: `pivotSILAutorizzaImportFlusso`, `pivotSILAutorizzaImportFlussoRendicontazione`, `pivotSILAutorizzaImportFlussoRT`, `pivotSILAutorizzaImportFlussoTesoreria`, `pivotSILChiediAccertamento`, `pivotSILChiediPagatiRiconciliati`, `pivotSILChiediStatoExportFlussoRiconciliazione`, `pivotSILChiediStatoImportFlusso`, `pivotSILChiediStatoImportFlussoTesoreria`, `pivotSILPrenotaExportFlussoRiconciliazione`
 
 > **NOTA**: Questo approccio "proxy trasparente" è necessario perché la PU richiede
 > l'Header SOAP con `codIpaEnte` (o `identificativoDominio`) per identificare l'ente.

@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "mypay-middleware-dev-fase8",
-    "name": "MyPay Middleware — Test Completo Fase 8 (tutti gli endpoint SOAP)",
-    "description": "Collection completa Fase 8 per testare TUTTI i 40 endpoint SOAP MyPay + gli endpoint MyPivot attraverso il middleware.\n\nIl middleware si interpone tra i SIL (Sistemi Informativi Locali) e la Piattaforma Unitaria di pagoPA:\n- Riceve richieste SOAP dai SIL su localhost:8080\n- Gestisce autonomamente l'autenticazione OAuth2 verso la PU\n- Inoltra le richieste autenticate e restituisce le risposte\n\nIl SOAP servlet è mappato su /ws/* e Spring WS esegue il dispatch basandosi su namespace+localPart.\n\nEndpoint:\n- /ws/pa → operazioni MyPay PA (DovutiPagati, CCPPa, Esito, FlussiSPC)\n- /ws/fesp → operazioni MyPay FESP (CCP, CCP25, RT, RP, AvvisiDigitali)\n- /ws/pivot → operazioni MyPivot (Riconciliazione)\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo\n\nValori di test:\n- codIpaEnte: {{silCodIpaEnte}}\n- identificativoDominio: {{silIdentificativoDominio}}",
+    "name": "MyPay Core Middleware — Collection E2E",
+    "description": "Collection E2E per testare TUTTI i 49 endpoint SOAP esposti dal middleware:\n- 39 operazioni MyPay (endpoint /ws/pa e /ws/fesp)\n- 10 operazioni MyPivot (endpoint /ws/pivot)\n\nIl middleware si interpone tra i SIL (Sistemi Informativi Locali) e la Piattaforma Unitaria di pagoPA:\n- Riceve richieste SOAP dai SIL su localhost:8080\n- Gestisce autonomamente l'autenticazione OAuth2 verso la PU\n- Inoltra le richieste autenticate e restituisce le risposte\n\nIl SOAP servlet è mappato su /ws/* e Spring WS esegue il dispatch basandosi su namespace+localPart.\n\nEndpoint:\n- /ws/pa → operazioni MyPay PA (DovutiPagati, CCPPa, Esito, FlussiSPC)\n- /ws/fesp → operazioni MyPay FESP (CCP, CCP25, RT, RP, AvvisiDigitali)\n- /ws/pivot → operazioni MyPivot Riconciliazione (10 operazioni)\n\nPre-requisiti:\n1. Applicazione avviata con profilo 'dev': -Dspring-boot.run.profiles=dev\n2. Variabile d'ambiente PIATTAFORMA_CLIENT_SECRET impostata\n3. Server in ascolto su http://localhost:8080\n4. PostgreSQL locale attivo\n\nValori di test:\n- codIpaEnte: {{silCodIpaEnte}}\n- identificativoDominio: {{silIdentificativoDominio}}",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -101,7 +101,7 @@
     },
     {
       "name": "2. MyPivot — Riconciliazione",
-      "description": "Operazioni MyPivot per la riconciliazione dei flussi di tesoreria. Namespace: http://www.regione.veneto.it/pagamenti/pivot/ente/\nEndpoint: /ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+      "description": "10 operazioni MyPivot per la riconciliazione dei pagamenti telematici.\nNamespace body: http://www.regione.veneto.it/pagamenti/pivot/ente/\nNamespace header: http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\nEndpoint: POST {{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati\n\nTutte le operazioni vengono inoltrate allo stesso path sulla Piattaforma Unitaria:\n  /pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati\n\nNOTA: pivotSILChiediPagatiRiconciliati non usa header intestazionePPT — codIpaEnte è nel body.",
       "item": [
         {
           "name": "2.1 pivotSILAutorizzaImportFlussoTesoreria — Tipo O (OPI)",
@@ -212,9 +212,436 @@
             },
             "description": "Variante con tipoFlusso=F (flusso finanziario).\n\nStesso flusso della richiesta 2.1, ma con tipoFlusso diverso."
           }
+        },
+        {
+          "name": "2.3 pivotSILAutorizzaImportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILAutorizzaImportFlussoRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILAutorizzaImportFlusso"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlusso>\n            <password>{{silPassword}}</password>\n            <tipoFlusso>R</tipoFlusso>\n            <identificativoFlusso>TEST_FLUSSO_ID</identificativoFlusso>\n        </ente:pivotSILAutorizzaImportFlusso>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Autorizza l'importazione di un flusso generico (rendicontazione, RT, ecc.).\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- tipoFlusso: tipo del flusso da importare\n- identificativoFlusso: identificativo univoco del flusso"
+          }
+        },
+        {
+          "name": "2.4 pivotSILAutorizzaImportFlussoRendicontazione",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILAutorizzaImportFlussoRendicontazioneRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoRendicontazioneRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILAutorizzaImportFlussoRendicontazione"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoRendicontazione>\n            <password>{{silPassword}}</password>\n            <identificativoFlusso>TEST_FLUSSO_RENDICONTAZIONE_ID</identificativoFlusso>\n        </ente:pivotSILAutorizzaImportFlussoRendicontazione>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Autorizza l'importazione di un flusso di rendicontazione (FlussoRiversamento).\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- identificativoFlusso: identificativo del flusso di rendicontazione"
+          }
+        },
+        {
+          "name": "2.5 pivotSILAutorizzaImportFlussoRT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILAutorizzaImportFlussoRTRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILAutorizzaImportFlussoRTRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILAutorizzaImportFlussoRT"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILAutorizzaImportFlussoRT>\n            <password>{{silPassword}}</password>\n            <identificativoUnivocoVersamento>TEST_IUV</identificativoUnivocoVersamento>\n            <codiceContestoPagamento>TEST_CCP</codiceContestoPagamento>\n        </ente:pivotSILAutorizzaImportFlussoRT>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Autorizza l'importazione di una Ricevuta Telematica (RT) da parte del SIL.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- identificativoUnivocoVersamento: IUV della RT\n- codiceContestoPagamento: CCP della transazione"
+          }
+        },
+        {
+          "name": "2.6 pivotSILChiediStatoImportFlusso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILChiediStatoImportFlussoRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILChiediStatoImportFlussoRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILChiediStatoImportFlusso"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILChiediStatoImportFlusso>\n            <password>{{silPassword}}</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:pivotSILChiediStatoImportFlusso>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Interroga lo stato di una precedente operazione di importazione flusso generico.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- requestToken: token restituito dalla chiamata di autorizzazione"
+          }
+        },
+        {
+          "name": "2.7 pivotSILChiediStatoImportFlussoTesoreria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILChiediStatoImportFlussoTesoreriaRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILChiediStatoImportFlussoTesoreriaRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILChiediStatoImportFlussoTesoreria"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILChiediStatoImportFlussoTesoreria>\n            <password>{{silPassword}}</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:pivotSILChiediStatoImportFlussoTesoreria>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Interroga lo stato di una precedente operazione di importazione flusso tesoreria.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- requestToken: token restituito dalla chiamata pivotSILAutorizzaImportFlussoTesoreria"
+          }
+        },
+        {
+          "name": "2.8 pivotSILPrenotaExportFlussoRiconciliazione",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILPrenotaExportFlussoRiconciliazioneRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILPrenotaExportFlussoRiconciliazioneRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILPrenotaExportFlussoRiconciliazione"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILPrenotaExportFlussoRiconciliazione>\n            <password>{{silPassword}}</password>\n            <classificazione>IUV</classificazione>\n            <identificativo>TEST_IUV</identificativo>\n        </ente:pivotSILPrenotaExportFlussoRiconciliazione>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Prenota la generazione di un flusso di export per la riconciliazione.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- classificazione: tipo di ricerca (IUV, IUF, ecc.)\n- identificativo: valore dell'identificativo di ricerca"
+          }
+        },
+        {
+          "name": "2.9 pivotSILChiediStatoExportFlussoRiconciliazione",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILChiediStatoExportFlussoRiconciliazioneRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILChiediStatoExportFlussoRiconciliazioneRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILChiediStatoExportFlussoRiconciliazione"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILChiediStatoExportFlussoRiconciliazione>\n            <password>{{silPassword}}</password>\n            <requestToken>TEST_REQUEST_TOKEN</requestToken>\n        </ente:pivotSILChiediStatoExportFlussoRiconciliazione>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Interroga lo stato di una prenotazione di export flusso riconciliazione.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- requestToken: token restituito dalla chiamata pivotSILPrenotaExportFlussoRiconciliazione"
+          }
+        },
+        {
+          "name": "2.10 pivotSILChiediPagatiRiconciliati (senza header)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILChiediPagatiRiconciliatiRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILChiediPagatiRiconciliatiRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILChiediPagatiRiconciliati"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header/>\n\n    <soapenv:Body>\n        <ente:pivotSILChiediPagatiRiconciliati>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n            <password>{{silPassword}}</password>\n            <classificazione>IUV</classificazione>\n            <identificativo>TEST_IUV</identificativo>\n        </ente:pivotSILChiediPagatiRiconciliati>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Recupera i pagamenti riconciliati per un ente, filtrabili per IUV o IUF.\n\nATTENZIONE: Questa operazione NON usa l'header intestazionePPT.\nIl codIpaEnte è nel body della richiesta.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nel body, non nell'header)\n- password: {{silPassword}}\n- classificazione: tipo di ricerca (IUV, IUF)\n- identificativo: valore dell'identificativo"
+          }
+        },
+        {
+          "name": "2.11 pivotSILChiediAccertamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/xml', function () {",
+                  "    pm.response.to.have.header('Content-Type');",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/xml');",
+                  "});",
+                  "",
+                  "pm.test('Response contains SOAP Envelope', function () {",
+                  "    pm.expect(pm.response.text()).to.include('Envelope');",
+                  "});",
+                  "",
+                  "pm.test('Response contains pivotSILChiediAccertamentoRisposta', function () {",
+                  "    pm.expect(pm.response.text()).to.include('pivotSILChiediAccertamentoRisposta');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "text/xml;charset=UTF-8"},
+              {"key": "SOAPAction", "value": "pivotSILChiediAccertamento"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:ppt=\"http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\"\n    xmlns:ente=\"http://www.regione.veneto.it/pagamenti/pivot/ente/\">\n\n    <soapenv:Header>\n        <ppt:intestazionePPT>\n            <codIpaEnte>{{silCodIpaEnte}}</codIpaEnte>\n        </ppt:intestazionePPT>\n    </soapenv:Header>\n\n    <soapenv:Body>\n        <ente:pivotSILChiediAccertamento>\n            <password>{{silPassword}}</password>\n            <classificazione>IUF</classificazione>\n            <identificativo>TEST_IUF</identificativo>\n        </ente:pivotSILChiediAccertamento>\n    </soapenv:Body>\n\n</soapenv:Envelope>",
+              "options": {"raw": {"language": "xml"}}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati",
+              "host": ["{{baseUrl}}"],
+              "path": ["ws", "pivot", "PagamentiTelematiciPagatiRiconciliati"]
+            },
+            "description": "Recupera i dati di accertamento per un ente, ricercabili per bolletta o per IUF.\n\nFlusso: SIL → Middleware /ws/pivot → PU\n\nParametri:\n- codIpaEnte: {{silCodIpaEnte}} (nell'header intestazionePPT)\n- password: {{silPassword}}\n- classificazione: tipo di ricerca (IUF, bolletta)\n- identificativo: valore dell'identificativo di ricerca"
+          }
         }
       ]
     },
+    {
+      "name": "MyPay",
+      "description": "Operazioni MyPay esposte dal middleware. Include tutte le operazioni PA (endpoint /ws/pa) e FESP (endpoint /ws/fesp).\n\nTotale: 39 operazioni in 9 sottocartelle.",
+      "item": [
     {
       "name": "3. MyPay PA — DovutiPagati",
       "description": "16 operazioni PA per la gestione di dovuti e pagati.\nNamespace body: http://www.regione.veneto.it/pagamenti/ente/\nNamespace header: http://www.regione.veneto.it/pagamenti/ente/ppthead\nEndpoint: POST {{baseUrl}}/ws/pa\nIdentificazione ente: codIpaEnte nell'header SOAP",
@@ -2307,6 +2734,8 @@
             "description": "Invia un avviso digitale tramite il nodo FESP.\n\nNamespace: http://www.regione.veneto.it/pagamenti/nodoregionalefesp/\nDispatch Spring WS: localPart=nodoSILInviaAvvisoDigitale"
           }
         }
+      ]
+    }
       ]
     },
     {

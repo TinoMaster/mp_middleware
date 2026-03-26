@@ -1,7 +1,7 @@
 # Guida Test End-to-End con Postman — MyPay Middleware
 
-**Versione:** 1.0  
-**Data:** 18 Marzo 2026  
+**Versione:** 2.0  
+**Data:** 26 Marzo 2026  
 **Ambiente testato:** PU UAT (`api.uat.p4pa.pagopa.it`)  
 **Risultato:** Test superato con successo (HTTP 200)
 
@@ -92,11 +92,42 @@ requests/MyPay-Middleware-Dev.postman_collection.json
 
 La collection contiene le seguenti cartelle:
 
-| Cartella | Contenuto |
-|----------|-----------|
-| **Diagnostica** | Health check, info, token status |
-| **Flusso Principale** | Richiesta SOAP `pivotSILAutorizzaImportFlussoTesoreria` |
-| **Test Diretti PU** | Chiamate dirette alla PU (per debug) |
+| Cartella | Sottocartelle / Requests | Operazioni SOAP |
+|----------|--------------------------|-----------------|
+| **1. Diagnostica** | 4 requests | — (health check HTTP) |
+| **2. MyPivot — Riconciliazione** | 11 requests | 10 operazioni (`/ws/pivot`) |
+| **MyPay** | 9 sottocartelle | 40 operazioni (`/ws/pa` e `/ws/fesp`) |
+| **12. Test Diretti PU (senza middleware)** | 2 requests | — (debug) |
+
+**Dettaglio cartella MyPay:**
+
+| Sottocartella | Operazioni |
+|---------------|------------|
+| 3. MyPay PA — DovutiPagati | 16 operazioni |
+| 4. MyPay PA — CCPPa | 4 operazioni |
+| 5. MyPay PA — Esito | 1 operazione |
+| 6. MyPay PA — FlussiSPC | 2 operazioni |
+| 7. MyPay FESP — CCP | 2 operazioni |
+| 8. MyPay FESP — CCP25 | 5 operazioni |
+| 9. MyPay FESP — RT | 1 operazione |
+| 10. MyPay FESP — RP | 8 operazioni |
+| 11. MyPay FESP — AvvisiDigitali | 1 operazione |
+
+**Dettaglio cartella MyPivot (10 operazioni):**
+
+| Request | Operazione | Header intestazionePPT |
+|---------|-----------|------------------------|
+| 2.1 | `pivotSILAutorizzaImportFlussoTesoreria` (tipoFlusso=O) | Sì |
+| 2.2 | `pivotSILAutorizzaImportFlussoTesoreria` (tipoFlusso=F) | Sì |
+| 2.3 | `pivotSILAutorizzaImportFlusso` | Sì |
+| 2.4 | `pivotSILAutorizzaImportFlussoRendicontazione` | Sì |
+| 2.5 | `pivotSILAutorizzaImportFlussoRT` | Sì |
+| 2.6 | `pivotSILChiediStatoImportFlusso` | Sì |
+| 2.7 | `pivotSILChiediStatoImportFlussoTesoreria` | Sì |
+| 2.8 | `pivotSILPrenotaExportFlussoRiconciliazione` | Sì |
+| 2.9 | `pivotSILChiediStatoExportFlussoRiconciliazione` | Sì |
+| 2.10 | `pivotSILChiediPagatiRiconciliati` | **No** — codIpaEnte nel body |
+| 2.11 | `pivotSILChiediAccertamento` | Sì |
 
 ### 4.1 Configurazione delle variabili SIL
 
@@ -110,7 +141,7 @@ Prima di eseguire i test, aprire la collection in Postman (tab **Variables**) e 
 | `silIdentificativoDominio` | `99999000013` | Codice fiscale dell'ente SIL (usato nei body CCP25 e MyPay) |
 | `silPassword` | `TEST_PASSWORD` | Password SIL di test (campo `<password>` nel body SOAP) |
 
-> Per testare un ente diverso, è sufficiente aggiornare queste variabili — le 48 richieste
+> Per testare un ente diverso, è sufficiente aggiornare queste variabili — le richieste
 > della collection le useranno automaticamente senza alcuna modifica manuale.
 
 ---
@@ -145,10 +176,12 @@ GET http://localhost:8080/actuator/health
 ### Step 2 — Richiesta SOAP principale (simula il SIL)
 
 Questa è la richiesta che il SIL invierebbe al middleware in produzione.
+L'esempio utilizza l'operazione `pivotSILAutorizzaImportFlussoTesoreria` (cartella 2.1 della collection),
+ma le stesse istruzioni si applicano a tutte le 49 operazioni esposte.
 
 **Richiesta:**
 ```
-POST http://localhost:8080/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati
+POST http://localhost:8080/ws/pivot/PagamentiTelematiciPagatiRiconciliati
 Content-Type: text/xml;charset=UTF-8
 ```
 

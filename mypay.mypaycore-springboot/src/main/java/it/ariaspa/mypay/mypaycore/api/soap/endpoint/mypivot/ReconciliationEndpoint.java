@@ -27,10 +27,22 @@ import org.w3c.dom.Element;
  *   <li>Body: {@code http://www.regione.veneto.it/pagamenti/pivot/ente/}</li>
  * </ul>
  *
- * <p>Operazione:
+ * <p>Operazioni esposte (10 in totale — contratto WSDL {@code mypivot-per-ente.wsdl}):
  * <ul>
- *   <li>{@code pivotSILAutorizzaImportFlussoTesoreria} — importazione flusso tesoreria</li>
+ *   <li>{@code pivotSILAutorizzaImportFlusso} — autorizza importazione flusso generico</li>
+ *   <li>{@code pivotSILAutorizzaImportFlussoRendicontazione} — autorizza importazione flusso rendicontazione</li>
+ *   <li>{@code pivotSILAutorizzaImportFlussoRT} — autorizza importazione flusso RT</li>
+ *   <li>{@code pivotSILAutorizzaImportFlussoTesoreria} — autorizza importazione flusso tesoreria</li>
+ *   <li>{@code pivotSILChiediAccertamento} — richiede dati di accertamento</li>
+ *   <li>{@code pivotSILChiediPagatiRiconciliati} — richiede pagati riconciliati</li>
+ *   <li>{@code pivotSILChiediStatoExportFlussoRiconciliazione} — stato export flusso riconciliazione</li>
+ *   <li>{@code pivotSILChiediStatoImportFlusso} — stato importazione flusso generico</li>
+ *   <li>{@code pivotSILChiediStatoImportFlussoTesoreria} — stato importazione flusso tesoreria</li>
+ *   <li>{@code pivotSILPrenotaExportFlussoRiconciliazione} — prenota export flusso riconciliazione</li>
  * </ul>
+ *
+ * <p>Tutte le operazioni vengono inoltrate al medesimo path sulla Piattaforma Unitaria:
+ * {@code /pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati}
  *
  * @see AbstractSoapProxyEndpoint
  */
@@ -42,6 +54,7 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
 
     /**
      * Percorso relativo dell'endpoint di riconciliazione sulla Piattaforma Unitaria.
+     * Tutte le 10 operazioni di questo endpoint condividono lo stesso path PU.
      */
     static final String PLATFORM_PATH =
             "/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati";
@@ -54,12 +67,12 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
     /**
      * Crea l'endpoint con tutte le dipendenze necessarie.
      *
-     * @param piattaformaClient        client per l'inoltro verso la PU
-     * @param proxyForwardingClient    client per il forward verso i backend legacy
-     * @param routingDecisionService   servizio di decisione del routing
+     * @param piattaformaClient         client per l'inoltro verso la PU
+     * @param proxyForwardingClient     client per il forward verso i backend legacy
+     * @param routingDecisionService    servizio di decisione del routing
      * @param transactionLoggingService servizio per il logging transazionale
-     * @param metricsService           servizio per la raccolta metriche
-     * @param enteCacheService         cache degli enti con lookup duale
+     * @param metricsService            servizio per la raccolta metriche
+     * @param enteCacheService          cache degli enti con lookup duale
      */
     public ReconciliationEndpoint(PiattaformaUnitariaClient piattaformaClient,
                                   ProxyForwardingClient proxyForwardingClient,
@@ -71,8 +84,58 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
                 transactionLoggingService, metricsService, enteCacheService);
     }
 
+    // -------------------------------------------------------------------------
+    // Operazioni di autorizzazione importazione flussi
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILAutorizzaImportFlusso}.
+     * Autorizza l'importazione di un flusso generico da parte del SIL.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILAutorizzaImportFlusso")
+    @ResponsePayload
+    public Element handleAutorizzaImportFlusso(@RequestPayload Element requestPayload,
+                                               MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILAutorizzaImportFlussoRendicontazione}.
+     * Autorizza l'importazione di un flusso di rendicontazione da parte del SIL.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILAutorizzaImportFlussoRendicontazione")
+    @ResponsePayload
+    public Element handleAutorizzaImportFlussoRendicontazione(@RequestPayload Element requestPayload,
+                                                              MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILAutorizzaImportFlussoRT}.
+     * Autorizza l'importazione di un flusso di Ricevute Telematiche (RT) da parte del SIL.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILAutorizzaImportFlussoRT")
+    @ResponsePayload
+    public Element handleAutorizzaImportFlussoRT(@RequestPayload Element requestPayload,
+                                                 MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
     /**
      * Gestisce la richiesta SOAP {@code pivotSILAutorizzaImportFlussoTesoreria}.
+     * Autorizza l'importazione di un flusso di tesoreria da parte del SIL.
      *
      * @param requestPayload l'elemento XML del body
      * @param messageContext il contesto del messaggio SOAP
@@ -80,8 +143,114 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
      */
     @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILAutorizzaImportFlussoTesoreria")
     @ResponsePayload
-    public Element handleReconciliationRequest(@RequestPayload Element requestPayload,
-                                               MessageContext messageContext) {
+    public Element handleAutorizzaImportFlussoTesoreria(@RequestPayload Element requestPayload,
+                                                        MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    // -------------------------------------------------------------------------
+    // Operazioni di interrogazione stato importazione flussi
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILChiediStatoImportFlusso}.
+     * Interroga lo stato di una precedente operazione di importazione flusso generico.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILChiediStatoImportFlusso")
+    @ResponsePayload
+    public Element handleChiediStatoImportFlusso(@RequestPayload Element requestPayload,
+                                                 MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILChiediStatoImportFlussoTesoreria}.
+     * Interroga lo stato di una precedente operazione di importazione flusso tesoreria.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILChiediStatoImportFlussoTesoreria")
+    @ResponsePayload
+    public Element handleChiediStatoImportFlussoTesoreria(@RequestPayload Element requestPayload,
+                                                          MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    // -------------------------------------------------------------------------
+    // Operazioni di export e riconciliazione
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILPrenotaExportFlussoRiconciliazione}.
+     * Prenota la generazione di un flusso di export per la riconciliazione.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILPrenotaExportFlussoRiconciliazione")
+    @ResponsePayload
+    public Element handlePrenotaExportFlussoRiconciliazione(@RequestPayload Element requestPayload,
+                                                            MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILChiediStatoExportFlussoRiconciliazione}.
+     * Interroga lo stato di una precedente prenotazione di export flusso riconciliazione.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILChiediStatoExportFlussoRiconciliazione")
+    @ResponsePayload
+    public Element handleChiediStatoExportFlussoRiconciliazione(@RequestPayload Element requestPayload,
+                                                                MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    // -------------------------------------------------------------------------
+    // Operazioni di interrogazione pagati e accertamento
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILChiediPagatiRiconciliati}.
+     * Recupera i pagamenti riconciliati per un ente, filtrabili per IUV/IUF o per data.
+     *
+     * <p>Nota: questa operazione non richiede header {@code intestazionePPT} nel contratto
+     * WSDL originale; l'identificazione dell'ente avviene tramite {@code codIpaEnte}
+     * presente nel body della richiesta.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILChiediPagatiRiconciliati")
+    @ResponsePayload
+    public Element handleChiediPagatiRiconciliati(@RequestPayload Element requestPayload,
+                                                  MessageContext messageContext) {
+        return processRequest(requestPayload, messageContext, PLATFORM_PATH);
+    }
+
+    /**
+     * Gestisce la richiesta SOAP {@code pivotSILChiediAccertamento}.
+     * Recupera i dati di accertamento per un ente, ricercabili per bolletta o per IUF.
+     *
+     * @param requestPayload l'elemento XML del body
+     * @param messageContext il contesto del messaggio SOAP
+     * @return l'elemento XML della risposta dal backend selezionato
+     */
+    @PayloadRoot(namespace = NAMESPACE_URI, localPart = "pivotSILChiediAccertamento")
+    @ResponsePayload
+    public Element handleChiediAccertamento(@RequestPayload Element requestPayload,
+                                            MessageContext messageContext) {
         return processRequest(requestPayload, messageContext, PLATFORM_PATH);
     }
 
