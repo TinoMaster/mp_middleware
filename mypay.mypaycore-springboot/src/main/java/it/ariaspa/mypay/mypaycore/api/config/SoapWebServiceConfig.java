@@ -35,8 +35,7 @@ public class SoapWebServiceConfig implements WsConfigurer {
      * Registra il MessageDispatcherServlet per gestire le richieste SOAP.
      * <p>
      * Mappato su {@code /ws/*} per intercettare tutti i path SOAP che i SIL inviano
-     * ai backend originali. Il path precedente ({@code /pu/sil/soap/*}) era provvisorio
-     * ed e stato sostituito con i path reali dei backend in Fase 5.
+     * ai backend originali.
      *
      * @param applicationContext il contesto Spring
      * @return bean di registrazione del servlet
