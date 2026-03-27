@@ -1,5 +1,6 @@
 package it.ariaspa.mypay.mypaycore.api.soap.exception;
 
+import it.ariaspa.mypay.mypaycore.api.common.exception.CredenzialeSilNonValidaException;
 import it.ariaspa.mypay.mypaycore.api.common.exception.EnteNonCensitoException;
 import it.ariaspa.mypay.mypaycore.api.common.exception.PathNonRiconosciutoException;
 import it.ariaspa.mypay.mypaycore.api.common.exception.PiattaformaAuthenticationException;
@@ -23,11 +24,12 @@ import java.util.Locale;
  *
  * <p>Mapping delle eccezioni:
  * <ul>
- *   <li>{@link EnteNonCensitoException}            → SOAP Fault Client con codice ENTE_NON_AUTORIZZATO</li>
- *   <li>{@link PathNonRiconosciutoException}        → SOAP Fault Client con codice PATH_NON_RICONOSCIUTO</li>
- *   <li>{@link PiattaformaAuthenticationException}  → SOAP Fault Server con codice AUTH_ERROR</li>
- *   <li>{@link PiattaformaCommunicationException}   → SOAP Fault Server con codice COMM_ERROR</li>
- *   <li>RuntimeException generiche                  → SOAP Fault Server con codice INTERNAL_ERROR</li>
+ *   <li>{@link EnteNonCensitoException}             → SOAP Fault Client con codice ENTE_NON_AUTORIZZATO</li>
+ *   <li>{@link CredenzialeSilNonValidaException}     → SOAP Fault Client con codice CREDENZIALI_NON_VALIDE</li>
+ *   <li>{@link PathNonRiconosciutoException}         → SOAP Fault Client con codice PATH_NON_RICONOSCIUTO</li>
+ *   <li>{@link PiattaformaAuthenticationException}   → SOAP Fault Server con codice AUTH_ERROR</li>
+ *   <li>{@link PiattaformaCommunicationException}    → SOAP Fault Server con codice COMM_ERROR</li>
+ *   <li>RuntimeException generiche                   → SOAP Fault Server con codice INTERNAL_ERROR</li>
  * </ul>
  *
  * <p>Le eccezioni relative al routing (ente non censito, path non riconosciuto) generano
@@ -64,6 +66,16 @@ public class SoapFaultExceptionResolver implements EndpointExceptionResolver {
                         Locale.ITALIAN
                 );
                 addFaultDetailCode(fault, "ENTE_NON_AUTORIZZATO");
+
+            } else if (ex instanceof CredenzialeSilNonValidaException) {
+                // Password SIL errata → SOAP Fault Client (errore del chiamante).
+                // Il messaggio e' volutamente generico: non rivela se il problema e'
+                // l'ente o la password, per non facilitare attacchi di enumerazione.
+                fault = soapBody.addClientOrSenderFault(
+                        "Credenziali non valide. Verificare il codice ente e la password.",
+                        Locale.ITALIAN
+                );
+                addFaultDetailCode(fault, "CREDENZIALI_NON_VALIDE");
 
             } else if (ex instanceof PathNonRiconosciutoException pathEx) {
                 // Path non riconosciuto → SOAP Fault Client (errore del chiamante)

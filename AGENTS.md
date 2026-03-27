@@ -64,6 +64,7 @@ mypay.mypaycore/                         ← root, parent POM
 │   │   ├── expert.md                    ← @expert: esperto tecnico principale del progetto
 │   │   ├── planner.md                   ← @planner: pianificazione e documentazione
 │   │   ├── tester.md                    ← @tester: testing Java e collection Postman
+│   │   ├── security.md                  ← @security: audit e analisi sicurezza applicativa
 │   │   └── orchestrator.md              ← @orchestrator: gestione ecosistema AI
 │   └── skills/                          ← skill OpenCode (conoscenza specializzata)
 │       └── springline2/
@@ -84,6 +85,9 @@ mypay.mypaycore/                         ← root, parent POM
 4. **Non usare `WsConfigurerAdapter`** (deprecato) — usare l'interfaccia `WsConfigurer`
 5. **Sicurezza XXE**: qualsiasi parsing XML deve usare `DocumentBuilderFactory` con DTD e
    external entities disabilitati
+6. **Non loggare dati sensibili**: token OAuth2, `client_secret`, password SOAP e dati
+   personali non devono MAI apparire nei log, a nessun livello. Per verifiche di sicurezza
+   approfondite, invocare l'agente **@security**
 
 ### Compilazione (Windows/WSL)
 
@@ -162,6 +166,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 | `@expert` | Decisioni architetturali, code review, debugging complesso, guida tecnica esperta sul middleware SOAP ↔ OAuth2, valutazione rischi e debito tecnico |
 | `@planner` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md dopo modifiche |
 | `@tester` | Scrivere test unitari Java (JUnit 5 + Mockito), test di integrazione (@SpringBootTest, WireMock), gestire la collection Postman, aggiornare la guida test E2E |
+| `@security` | Audit di sicurezza del codice (XXE, injection, credenziali), verifica flusso OAuth2, analisi log per dati sensibili, security code review, analisi CVE dipendenze |
 | `@orchestrator` | Gestire ecosistema AI: creare/auditare/ottimizzare agenti, skill, comandi e MCP server |
 
 ## Skill disponibili

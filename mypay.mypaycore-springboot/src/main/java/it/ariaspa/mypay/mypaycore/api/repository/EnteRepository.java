@@ -33,7 +33,7 @@ public interface EnteRepository {
      * @param codIpaEnte codice IPA dell'ente (es. {@code "R_LOMBARDIA"})
      * @return dati dell'ente se censito, {@link Optional#empty()} altrimenti
      */
-    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente "
+    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente, de_password "
             + "FROM mygov_ente "
             + "WHERE cod_ipa_ente = :codIpaEnte")
     Optional<Ente> findByCodIpaEnte(@Bind("codIpaEnte") String codIpaEnte);
@@ -48,7 +48,7 @@ public interface EnteRepository {
      * @param codiceFiscaleEnte codice fiscale dell'ente (es. {@code "80007580279"})
      * @return dati dell'ente se trovato, {@link Optional#empty()} altrimenti
      */
-    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente "
+    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente, de_password "
             + "FROM mygov_ente "
             + "WHERE codice_fiscale_ente = :codiceFiscaleEnte")
     Optional<Ente> findByCodiceFiscale(@Bind("codiceFiscaleEnte") String codiceFiscaleEnte);
@@ -59,7 +59,7 @@ public interface EnteRepository {
      *
      * @return lista di tutti gli enti
      */
-    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente "
+    @SqlQuery("SELECT mygov_ente_id, cod_ipa_ente, codice_fiscale_ente, de_nome_ente, cd_stato_ente, de_password "
             + "FROM mygov_ente "
             + "ORDER BY cod_ipa_ente")
     List<Ente> findAll();

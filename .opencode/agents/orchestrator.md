@@ -57,6 +57,7 @@ mypay.mypaycore/
     │   ├── expert.md                    ← @expert: technical expert, architecture, code review
     │   ├── planner.md                   ← @planner: project planning & documentation
     │   ├── tester.md                    ← @tester: Java testing & Postman collection
+    │   ├── security.md                  ← @security: application security audit & analysis
     │   └── orchestrator.md              ← @orchestrator: THIS agent (you)
     ├── commands/                         ← Custom slash commands (currently empty)
     └── skills/

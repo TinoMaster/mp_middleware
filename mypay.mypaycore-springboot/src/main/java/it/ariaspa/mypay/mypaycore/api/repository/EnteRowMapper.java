@@ -35,6 +35,8 @@ public class EnteRowMapper implements RowMapper<Ente> {
         ente.setCodiceFiscaleEnte(rs.getString("codice_fiscale_ente"));
         ente.setDeNomeEnte(rs.getString("de_nome_ente"));
         ente.setCdStatoEnte(rs.getString("cd_stato_ente"));
+        // Password SIL: nullable — se NULL la validazione della password e' disabilitata per questo ente
+        ente.setDePassword(rs.getString("de_password"));
         return ente;
     }
 }

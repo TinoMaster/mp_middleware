@@ -2,6 +2,7 @@ package it.ariaspa.mypay.mypaycore.api.soap.endpoint;
 
 import it.ariaspa.mypay.mypaycore.api.client.PiattaformaUnitariaClient;
 import it.ariaspa.mypay.mypaycore.api.client.ProxyForwardingClient;
+import it.ariaspa.mypay.mypaycore.api.common.exception.CredenzialeSilNonValidaException;
 import it.ariaspa.mypay.mypaycore.api.domain.EnteCompleto;
 import it.ariaspa.mypay.mypaycore.api.logging.TransactionLoggingService;
 import it.ariaspa.mypay.mypaycore.api.metrics.MiddlewareMetricsService;
@@ -167,6 +168,10 @@ public abstract class AbstractSoapProxyEndpoint {
             codIpaEnte = extractEnteIdentifier(fullSoapEnvelope);
             log.info("codIpaEnte identificato: '{}' per operazione '{}'", codIpaEnte, operationName);
 
+            // Verifica le credenziali del SIL: confronta la <password> del body SOAP
+            // con quella configurata in mygov_ente.de_password per questo ente.
+            verificaCredenzialeSil(fullSoapEnvelope, codIpaEnte);
+
             // Determina il path HTTP della richiesta originale
             requestPath = extractRequestPath();
             log.debug("Path HTTP della richiesta: '{}'", requestPath);
@@ -227,6 +232,48 @@ public abstract class AbstractSoapProxyEndpoint {
     // =====================================================================
     // Estrazione dell'identificativo dell'ente — ricerca generica
     // =====================================================================
+
+    /**
+     * Verifica le credenziali del SIL confrontando la password estratta dal body SOAP
+     * con quella configurata in {@code mygov_ente.de_password} per l'ente identificato.
+     *
+     * <p>Il campo {@code de_password} e' obbligatorio per ogni ente: se assente in cache
+     * (caso anomalo) o se il tag {@code <password>} manca nel SOAP, la richiesta viene
+     * sempre rifiutata.
+     *
+     * <p>La password non viene mai loggata, ne' in caso di successo ne' in caso di errore.
+     *
+     * @param soapEnvelope il SOAP Envelope completo come stringa XML
+     * @param codIpaEnte   il codice IPA dell'ente gia' identificato
+     * @throws CredenzialeSilNonValidaException se la password e' assente o non corrisponde
+     */
+    private void verificaCredenzialeSil(String soapEnvelope, String codIpaEnte) throws Exception {
+        // Recupera l'ente dalla cache (gia' caricato e valido a questo punto del flusso)
+        EnteCompleto enteCompleto = enteCacheService.findByCodIpaEnte(codIpaEnte)
+                .orElseThrow(() -> new CredenzialeSilNonValidaException(codIpaEnte));
+
+        // Estrai il tag <password> dal body SOAP
+        Document document = secureDocumentBuilderFactory.newDocumentBuilder()
+                .parse(new InputSource(new StringReader(soapEnvelope)));
+        String passwordRicevuta = extractTextFromTag(document, "password");
+
+        // Tag <password> assente nella richiesta SOAP → rifiuto immediato
+        if (passwordRicevuta == null) {
+            log.warn("Credenziali SIL mancanti: tag <password> assente nella richiesta SOAP "
+                    + "per ente '{}' — accesso negato", codIpaEnte);
+            throw new CredenzialeSilNonValidaException(codIpaEnte);
+        }
+
+        // Confronto in chiaro tra password ricevuta e password configurata in DB.
+        // La password non viene mai loggata per sicurezza.
+        if (!passwordRicevuta.equals(enteCompleto.getEnte().getDePassword())) {
+            log.warn("Credenziali SIL non valide per ente '{}' — accesso negato", codIpaEnte);
+            throw new CredenzialeSilNonValidaException(codIpaEnte);
+        }
+
+        log.debug("Credenziali SIL verificate con successo per ente '{}'", codIpaEnte);
+    }
+
 
     /**
      * Estrae l'identificativo dell'ente dal SOAP Envelope con ricerca generica.

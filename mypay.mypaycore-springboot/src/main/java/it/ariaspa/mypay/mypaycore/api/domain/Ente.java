@@ -11,7 +11,9 @@ import lombok.Setter;
  * condivisa con le applicazioni mypay e mypivot.
  *
  * <p>La validazione dell'ente avviene verificando la presenza del {@code codIpaEnte}
- * in questa tabella. Non vengono verificati ne' la password ne' lo stato dell'ente.
+ * in questa tabella e confrontando la password fornita dal SIL nella richiesta SOAP
+ * con il campo {@code dePassword}. Il campo {@code de_password} e' obbligatorio
+ * in {@code mygov_ente}: ogni ente deve avere una password configurata.
  */
 @Getter
 @Setter
@@ -44,6 +46,16 @@ public class Ente {
      * Non viene usato per la validazione del routing.
      */
     private String cdStatoEnte;
+
+    /**
+     * Password del SIL per l'autenticazione verso il middleware.
+     *
+     * <p>Corrisponde alla colonna {@code de_password} in {@code mygov_ente}.
+     * Il campo e' obbligatorio: ogni ente deve avere una password configurata.
+     *
+     * <p>Non viene mai inclusa nei log ne' nella rappresentazione {@link #toString()}.
+     */
+    private String dePassword;
 
     /**
      * Costruttore vuoto per compatibilita' con i framework di mapping (Jdbi).
