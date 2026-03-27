@@ -7,6 +7,7 @@ import it.ariaspa.mypay.mypaycore.api.metrics.MiddlewareMetricsService;
 import it.ariaspa.mypay.mypaycore.api.repository.EnteCacheService;
 import it.ariaspa.mypay.mypaycore.api.routing.RoutingDecisionService;
 import it.ariaspa.mypay.mypaycore.api.soap.endpoint.AbstractSoapProxyEndpoint;
+import it.ariaspa.mypay.mypaycore.api.util.Constants;
 import org.springframework.ws.context.MessageContext;
 import org.springframework.ws.server.endpoint.annotation.Endpoint;
 import org.springframework.ws.server.endpoint.annotation.PayloadRoot;
@@ -56,8 +57,7 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
      * Percorso relativo dell'endpoint di riconciliazione sulla Piattaforma Unitaria.
      * Tutte le 10 operazioni di questo endpoint condividono lo stesso path PU.
      */
-    static final String PLATFORM_PATH =
-            "/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati";
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
     /**
      * Path di default per il fallback (quando il TransportContext non e' disponibile).

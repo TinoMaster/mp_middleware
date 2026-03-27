@@ -7,6 +7,7 @@ import it.ariaspa.mypay.mypaycore.api.metrics.MiddlewareMetricsService;
 import it.ariaspa.mypay.mypaycore.api.repository.EnteCacheService;
 import it.ariaspa.mypay.mypaycore.api.routing.RoutingDecisionService;
 import it.ariaspa.mypay.mypaycore.api.soap.endpoint.AbstractSoapProxyEndpoint;
+import it.ariaspa.mypay.mypaycore.api.util.Constants;
 import org.springframework.ws.context.MessageContext;
 import org.springframework.ws.server.endpoint.annotation.Endpoint;
 import org.springframework.ws.server.endpoint.annotation.PayloadRoot;
@@ -44,7 +45,7 @@ public class PagamentiTelematiciCCP25Endpoint extends AbstractSoapProxyEndpoint 
     static final String NAMESPACE_URI = "http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd";
 
     /** Path PU per l'inoltro alla Piattaforma Unitaria. */
-    static final String PLATFORM_PATH = "/pu/sil/soap/fesp/PagamentiTelematiciCCP25";
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
     /** Path di default per il fallback. */
     private static final String DEFAULT_PATH = "/ws/fesp";
