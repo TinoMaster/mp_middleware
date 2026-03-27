@@ -19,7 +19,9 @@ package it.ariaspa.mypay.mypaycore.api.util;
  */
 public final class Constants {
 
-    /** Costruttore privato: classe di sola utility, non istanziabile. */
+    /**
+     * Costruttore privato: classe di sola utility, non istanziabile.
+     */
     private Constants() {
         throw new UnsupportedOperationException("Classe di sole costanti, non istanziabile.");
     }
@@ -38,7 +40,7 @@ public final class Constants {
      * rispecchiare i path reali dell'API pagoPA.
      */
     public static final String PLATFORM_PATH =
-            "/pu/sil/soap/payments/PagamentiTelematiciAvvisiDigitali";
+            "/pu/sil/soap/payments/PagamentiTelematiciDovutiPagati";
 
     // =========================================================================
     // Path di fallback esposti dal middleware (DEFAULT_PATH degli endpoint)
