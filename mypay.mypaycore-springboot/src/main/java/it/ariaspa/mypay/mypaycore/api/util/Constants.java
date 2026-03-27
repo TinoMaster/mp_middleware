@@ -31,13 +31,21 @@ public final class Constants {
     // =========================================================================
 
     /**
-     * Path relativo del servizio sulla Piattaforma Unitaria verso cui il middleware
-     * inoltra tutte le richieste SOAP degli endpoint.
+     * Path relativo del servizio sulla Piattaforma Unitaria (pagoPA) verso cui il middleware
+     * inoltra le richieste SOAP degli endpoint.
      *
-     * <p><strong>Nota (Fase 3):</strong> questo valore è attualmente un segnaposto generico.
-     * Nella Fase 3 verrà sostituito da costanti distinte per ogni famiglia di endpoint
-     * (es. {@code PLATFORM_PATH_MYPAY}, {@code PLATFORM_PATH_MYPIVOT}, ecc.) in modo da
-     * rispecchiare i path reali dell'API pagoPA.
+     * <p><strong>Stato attuale — provvisorio:</strong> si utilizza un unico path condiviso
+     * perché i path reali dei singoli endpoint sulla Piattaforma Unitaria non sono ancora
+     * stati comunicati da pagoPA. Non è ancora noto se tutti gli endpoint condivideranno
+     * lo stesso path o se ciascun gruppo avrà il proprio.
+     *
+     * <p><strong>Evoluzione attesa:</strong> non appena pagoPA fornirà la mappa completa
+     * degli endpoint, questa costante verrà sostituita da costanti distinte per ogni
+     * gruppo di operazioni (es. {@code PLATFORM_PATH_MYPAY_PA},
+     * {@code PLATFORM_PATH_MYPAY_FESP}, {@code PLATFORM_PATH_MYPIVOT}, ecc.).
+     *
+     * <p>TODO (IT): aggiornare con i path reali forniti da pagoPA e differenziare
+     * per gruppo di endpoint.
      */
     public static final String PLATFORM_PATH =
             "/pu/sil/soap/payments/PagamentiTelematiciDovutiPagati";
