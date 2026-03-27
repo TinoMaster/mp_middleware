@@ -41,14 +41,17 @@ import org.w3c.dom.Element;
 @Endpoint
 public class PagamentiTelematiciCCPPaEndpoint extends AbstractSoapProxyEndpoint {
 
-    /** Namespace URI per le operazioni CCPPa. */
-    static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/pa/";
+    /**
+     * Namespace URI per le operazioni CCPPa.
+     * Condiviso con Esito e FlussiSPC — centralizzato in {@link Constants#NS_MYPAY_PA}.
+     */
+    static final String NAMESPACE_URI = Constants.NS_MYPAY_PA;
 
     /** Path PU per l'inoltro delle richieste alla Piattaforma Unitaria. */
     static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
-    /** Path di default per il fallback. */
-    private static final String DEFAULT_PATH = "/ws/pa";
+    /** Path di default per il fallback quando il TransportContext non è disponibile. */
+    private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_PA;
 
     public PagamentiTelematiciCCPPaEndpoint(
             PiattaformaUnitariaClient piattaformaClient,

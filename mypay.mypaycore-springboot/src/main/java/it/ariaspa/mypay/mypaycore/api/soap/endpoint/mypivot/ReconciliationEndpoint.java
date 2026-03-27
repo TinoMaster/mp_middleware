@@ -50,7 +50,10 @@ import org.w3c.dom.Element;
 @Endpoint
 public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
 
-    /** Namespace URI per le operazioni di riconciliazione (body). */
+    /**
+     * Namespace URI per le operazioni di riconciliazione (body).
+     * Univoco per questo endpoint — dichiarato localmente.
+     */
     static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/pivot/ente/";
 
     /**
@@ -60,9 +63,10 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
     static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
     /**
-     * Path di default per il fallback (quando il TransportContext non e' disponibile).
+     * Path di default per il fallback quando il TransportContext non è disponibile.
+     * Centralizzato in {@link Constants#DEFAULT_PATH_PIVOT}.
      */
-    private static final String DEFAULT_PATH = "/ws/pivot";
+    private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_PIVOT;
 
     /**
      * Crea l'endpoint con tutte le dipendenze necessarie.

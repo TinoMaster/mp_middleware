@@ -41,14 +41,17 @@ import org.w3c.dom.Element;
 @Endpoint
 public class PagamentiTelematiciCCP25Endpoint extends AbstractSoapProxyEndpoint {
 
-    /** Namespace URI per le operazioni CCP25 (SANP 2.5). */
+    /**
+     * Namespace URI per le operazioni CCP25 (SANP 2.5).
+     * Univoco per questo endpoint — dichiarato localmente.
+     */
     static final String NAMESPACE_URI = "http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd";
 
     /** Path PU per l'inoltro alla Piattaforma Unitaria. */
     static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
-    /** Path di default per il fallback. */
-    private static final String DEFAULT_PATH = "/ws/fesp";
+    /** Path di default per il fallback quando il TransportContext non è disponibile. */
+    private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_FESP;
 
     public PagamentiTelematiciCCP25Endpoint(
             PiattaformaUnitariaClient piattaformaClient,

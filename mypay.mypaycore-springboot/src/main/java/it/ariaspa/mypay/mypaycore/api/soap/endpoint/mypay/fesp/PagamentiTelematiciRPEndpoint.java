@@ -46,14 +46,17 @@ import org.w3c.dom.Element;
 @Endpoint
 public class PagamentiTelematiciRPEndpoint extends AbstractSoapProxyEndpoint {
 
-    /** Namespace URI per le operazioni RP (nodo regionale FESP). */
-    static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/nodoregionalefesp/";
+    /**
+     * Namespace URI per le operazioni RP (nodo regionale FESP).
+     * Condiviso con AvvisiDigitaliEndpoint — centralizzato in {@link Constants#NS_FESP_NODO_REGIONALE}.
+     */
+    static final String NAMESPACE_URI = Constants.NS_FESP_NODO_REGIONALE;
 
     /** Path PU per l'inoltro alla Piattaforma Unitaria. */
     static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
-    /** Path di default per il fallback. */
-    private static final String DEFAULT_PATH = "/ws/fesp";
+    /** Path di default per il fallback quando il TransportContext non è disponibile. */
+    private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_FESP;
 
     public PagamentiTelematiciRPEndpoint(
             PiattaformaUnitariaClient piattaformaClient,

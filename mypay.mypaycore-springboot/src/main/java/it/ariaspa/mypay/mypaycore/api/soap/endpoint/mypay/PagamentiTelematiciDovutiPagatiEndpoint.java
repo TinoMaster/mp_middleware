@@ -54,14 +54,17 @@ import org.w3c.dom.Element;
 @Endpoint
 public class PagamentiTelematiciDovutiPagatiEndpoint extends AbstractSoapProxyEndpoint {
 
-    /** Namespace URI per le operazioni DovutiPagati. */
+    /**
+     * Namespace URI per le operazioni DovutiPagati.
+     * Univoco per questo endpoint — dichiarato localmente.
+     */
     static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/ente/";
 
     /** Path PU per l'inoltro delle richieste alla Piattaforma Unitaria. */
     static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
 
-    /** Path di default per il fallback. */
-    private static final String DEFAULT_PATH = "/ws/pa";
+    /** Path di default per il fallback quando il TransportContext non è disponibile. */
+    private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_PA;
 
     public PagamentiTelematiciDovutiPagatiEndpoint(
             PiattaformaUnitariaClient piattaformaClient,
