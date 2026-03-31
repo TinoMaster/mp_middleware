@@ -60,8 +60,8 @@ public class PagamentiTelematiciDovutiPagatiEndpoint extends AbstractSoapProxyEn
      */
     static final String NAMESPACE_URI = "http://www.regione.veneto.it/pagamenti/ente/";
 
-    /** Path PU per l'inoltro delle richieste alla Piattaforma Unitaria. */
-    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
+    /** Path PU per l'inoltro delle richieste alla Piattaforma Unitaria (area pagamenti MyPay). */
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH_PU_MYPAY;
 
     /** Path di default per il fallback quando il TransportContext non è disponibile. */
     private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_PA;

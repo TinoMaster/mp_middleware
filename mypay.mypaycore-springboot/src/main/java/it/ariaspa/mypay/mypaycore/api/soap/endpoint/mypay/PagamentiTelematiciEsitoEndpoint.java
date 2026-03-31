@@ -44,8 +44,8 @@ public class PagamentiTelematiciEsitoEndpoint extends AbstractSoapProxyEndpoint 
      */
     static final String NAMESPACE_URI = Constants.NS_MYPAY_PA;
 
-    /** Path PU per l'inoltro alla Piattaforma Unitaria. */
-    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
+    /** Path PU per l'inoltro alla Piattaforma Unitaria (area pagamenti MyPay). */
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH_PU_MYPAY;
 
     /** Path di default per il fallback quando il TransportContext non è disponibile. */
     private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_PA;

@@ -58,9 +58,9 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
 
     /**
      * Percorso relativo dell'endpoint di riconciliazione sulla Piattaforma Unitaria.
-     * Tutte le 10 operazioni di questo endpoint condividono lo stesso path PU.
+     * Tutte le 10 operazioni di questo endpoint condividono lo stesso path PU (area MyPivot).
      */
-    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH_PU_MYPIVOT;
 
     /**
      * Path di default per il fallback quando il TransportContext non è disponibile.

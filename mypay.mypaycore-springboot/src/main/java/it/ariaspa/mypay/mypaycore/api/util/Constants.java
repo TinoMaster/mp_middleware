@@ -11,11 +11,9 @@ package it.ariaspa.mypay.mypaycore.api.util;
  * <ul>
  *   <li>{@code NS_*}    — Namespace URI dei contratti WSDL/SOAP</li>
  *   <li>{@code PATH_*}  — Path HTTP esposti dal middleware ai SIL (path di fallback)</li>
- *   <li>{@code PLATFORM_PATH} — Path sulla Piattaforma Unitaria (pagoPA)</li>
+ *   <li>{@code PLATFORM_PATH_PU_*} — Path sulla Piattaforma Unitaria (pagoPA),
+ *       differenziati per area funzionale (MyPay / MyPivot)</li>
  * </ul>
- *
- * <p>I valori di {@code PLATFORM_PATH} saranno differenziati per endpoint nella Fase 3
- * (logica di business). Attualmente tutti gli endpoint condividono lo stesso segnaposto.
  */
 public final class Constants {
 
@@ -27,28 +25,26 @@ public final class Constants {
     }
 
     // =========================================================================
-    // Path sulla Piattaforma Unitaria (pagoPA)
+    // Path sulla Piattaforma Unitaria (pagoPA) — differenziati per area funzionale
     // =========================================================================
 
     /**
-     * Path relativo del servizio sulla Piattaforma Unitaria (pagoPA) verso cui il middleware
-     * inoltra le richieste SOAP degli endpoint.
+     * Path relativo del servizio pagamenti (MyPay) sulla Piattaforma Unitaria.
      *
-     * <p><strong>Stato attuale — provvisorio:</strong> si utilizza un unico path condiviso
-     * perché i path reali dei singoli endpoint sulla Piattaforma Unitaria non sono ancora
-     * stati comunicati da pagoPA. Non è ancora noto se tutti gli endpoint condivideranno
-     * lo stesso path o se ciascun gruppo avrà il proprio.
-     *
-     * <p><strong>Evoluzione attesa:</strong> non appena pagoPA fornirà la mappa completa
-     * degli endpoint, questa costante verrà sostituita da costanti distinte per ogni
-     * gruppo di operazioni (es. {@code PLATFORM_PATH_MYPAY_PA},
-     * {@code PLATFORM_PATH_MYPAY_FESP}, {@code PLATFORM_PATH_MYPIVOT}, ecc.).
-     *
-     * <p>TODO (IT): aggiornare con i path reali forniti da pagoPA e differenziare
-     * per gruppo di endpoint.
+     * <p>Utilizzato da tutti i 9 endpoint MyPay (PA + FESP) per l'inoltro delle
+     * richieste SOAP verso pagoPA.
      */
-    public static final String PLATFORM_PATH =
+    public static final String PLATFORM_PATH_PU_MYPAY =
             "/pu/sil/soap/payments/PagamentiTelematiciDovutiPagati";
+
+    /**
+     * Path relativo del servizio di riconciliazione (MyPivot) sulla Piattaforma Unitaria.
+     *
+     * <p>Utilizzato dall'endpoint {@code ReconciliationEndpoint} per l'inoltro delle
+     * richieste SOAP di riconciliazione verso pagoPA.
+     */
+    public static final String PLATFORM_PATH_PU_MYPIVOT =
+            "/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati";
 
     // =========================================================================
     // Path di fallback esposti dal middleware (DEFAULT_PATH degli endpoint)

@@ -47,8 +47,8 @@ public class PagamentiTelematiciCCP25Endpoint extends AbstractSoapProxyEndpoint 
      */
     static final String NAMESPACE_URI = "http://pagopa-api.pagopa.gov.it/pa/paForNode.xsd";
 
-    /** Path PU per l'inoltro alla Piattaforma Unitaria. */
-    static final String PLATFORM_PATH = Constants.PLATFORM_PATH;
+    /** Path PU per l'inoltro alla Piattaforma Unitaria (area pagamenti MyPay). */
+    static final String PLATFORM_PATH = Constants.PLATFORM_PATH_PU_MYPAY;
 
     /** Path di default per il fallback quando il TransportContext non è disponibile. */
     private static final String DEFAULT_PATH = Constants.DEFAULT_PATH_FESP;

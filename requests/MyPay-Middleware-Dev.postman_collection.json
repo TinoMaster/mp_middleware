@@ -101,7 +101,7 @@
     },
     {
       "name": "2. MyPivot — Riconciliazione",
-      "description": "10 operazioni MyPivot per la riconciliazione dei pagamenti telematici.\nNamespace body: http://www.regione.veneto.it/pagamenti/pivot/ente/\nNamespace header: http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\nEndpoint: POST {{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati\n\nTutte le operazioni vengono inoltrate allo stesso path sulla Piattaforma Unitaria:\n  /pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati\n\nNOTA: pivotSILChiediPagatiRiconciliati non usa header intestazionePPT — codIpaEnte è nel body.",
+      "description": "10 operazioni MyPivot per la riconciliazione dei pagamenti telematici.\nNamespace body: http://www.regione.veneto.it/pagamenti/pivot/ente/\nNamespace header: http://www.regione.veneto.it/pagamenti/pivot/ente/ppthead\nEndpoint SIL: POST {{baseUrl}}/ws/pivot/PagamentiTelematiciPagatiRiconciliati\n\nPath PU (inoltro automatico dal middleware):\n  /pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati\n\nNOTA: Le operazioni MyPivot usano un path PU dedicato (reconciliation), diverso da quello delle operazioni MyPay (payments).\nNOTA: pivotSILChiediPagatiRiconciliati non usa header intestazionePPT — codIpaEnte è nel body.",
       "item": [
         {
           "name": "2.1 pivotSILAutorizzaImportFlussoTesoreria — Tipo O (OPI)",
@@ -640,7 +640,7 @@
     },
     {
       "name": "MyPay",
-      "description": "Operazioni MyPay esposte dal middleware. Include tutte le operazioni PA (endpoint /ws/pa) e FESP (endpoint /ws/fesp).\n\nTotale: 39 operazioni in 9 sottocartelle.",
+      "description": "Operazioni MyPay esposte dal middleware. Include tutte le operazioni PA (endpoint /ws/pa) e FESP (endpoint /ws/fesp).\n\nPath PU (inoltro automatico dal middleware):\n  /pu/sil/soap/payments/PagamentiTelematiciDovutiPagati\n\nNOTA: Tutte le 39 operazioni MyPay (PA + FESP) condividono lo stesso path PU (payments), diverso da quello di MyPivot (reconciliation).\n\nTotale: 39 operazioni in 9 sottocartelle.",
       "item": [
     {
       "name": "3. MyPay PA — DovutiPagati",

@@ -1091,7 +1091,7 @@ Ogni endpoint concreto segue lo stesso pattern uniforme:
 public class NomeEndpoint extends AbstractSoapProxyEndpoint {
 
     private static final String NAMESPACE_URI = "...";
-    private static final String PLATFORM_PATH = "/pu/sil/soap/.../...";
+    private static final String PLATFORM_PATH = Constants.PLATFORM_PATH_PU_MYPAY; // o PLATFORM_PATH_PU_MYPIVOT
 
     // Costruttore con le stesse 6 dipendenze
 
@@ -1109,7 +1109,7 @@ public class NomeEndpoint extends AbstractSoapProxyEndpoint {
 
 ### Esempio: `ReconciliationEndpoint.java` (MyPivot)
 
-L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFORM_PATH:
+L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFORM_PATH (area riconciliazione):
 - Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
 - Path SIL: `/ws/pivot/PagamentiTelematiciPagatiRiconciliati`
 - Path PU: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
