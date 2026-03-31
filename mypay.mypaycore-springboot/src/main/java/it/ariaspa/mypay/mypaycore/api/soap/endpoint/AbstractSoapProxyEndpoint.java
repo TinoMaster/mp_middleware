@@ -202,7 +202,7 @@ public abstract class AbstractSoapProxyEndpoint {
 
             // Registra successo nel log transazionale e nelle metriche
             long durataMs = System.currentTimeMillis() - startTime;
-            transactionLoggingService.logSuccesso(codIpaEnte, decision, requestPath, 200, durataMs);
+            transactionLoggingService.logSuccesso(codIpaEnte, operationName, decision, requestPath, 200, durataMs);
             metricsService.registraSuccesso(codIpaEnte, decision, durataMs);
 
             return responseElement;
@@ -212,10 +212,10 @@ public abstract class AbstractSoapProxyEndpoint {
             long durataMs = System.currentTimeMillis() - startTime;
             if (decision != null) {
                 transactionLoggingService.logErrore(
-                        codIpaEnte, decision, requestPath, null, e.getMessage(), durataMs);
+                        codIpaEnte, operationName, decision, requestPath, null, e.getMessage(), durataMs);
             } else {
                 transactionLoggingService.logErrorePreRouting(
-                        codIpaEnte, requestPath, e.getMessage(), durataMs);
+                        codIpaEnte, operationName, requestPath, e.getMessage(), durataMs);
             }
             metricsService.registraErrore(codIpaEnte, decision, durataMs);
 

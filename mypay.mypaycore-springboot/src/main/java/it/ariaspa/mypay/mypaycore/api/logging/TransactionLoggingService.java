@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Informazioni registrate per ogni transazione:
  * <ul>
  *   <li>Codice IPA dell'ente ({@code codIpaEnte})</li>
+ *   <li>Tipo di operazione SOAP (localPart del payload, es. {@code pivotSILAutorizzaImportFlusso})</li>
  *   <li>Modalita' di instradamento (PU o legacy)</li>
  *   <li>Backend di destinazione (MYPAY o MYPIVOT)</li>
  *   <li>Path HTTP della richiesta</li>
@@ -57,13 +58,6 @@ public class TransactionLoggingService {
     /** Lunghezza massima del messaggio di errore salvato nel DB (evita overflow). */
     private static final int MAX_MESSAGGIO_ERRORE_LENGTH = 1000;
 
-    /**
-     * Valore di default per il campo tipoOperazione nel DB.
-     * Il routing non e' piu' basato sul tipo operazione, ma il campo e' mantenuto per
-     * compatibilita' con lo schema della tabella.
-     */
-    private static final String TIPO_OPERAZIONE_DEFAULT = "N/A";
-
     private final TransactionLogRepository transactionLogRepository;
 
     /**
@@ -83,15 +77,17 @@ public class TransactionLoggingService {
      * non deve mai essere bloccata da un errore di logging.
      *
      * @param codIpaEnte    codice IPA dell'ente
+     * @param tipoOperazione nome dell'operazione SOAP (localPart del payload,
+     *                       es. {@code paVerifyPaymentNotice})
      * @param decision      decisione di routing (contiene destinazione, modalita', URL)
      * @param pathRichiesta path HTTP della richiesta SOAP
      * @param httpStatus    codice HTTP della risposta dal backend (null se non disponibile)
      * @param durataMs      durata della transazione in millisecondi
      */
     @Transactional(transactionManager = "tmPa")
-    public void logSuccesso(String codIpaEnte, RoutingDecision decision,
+    public void logSuccesso(String codIpaEnte, String tipoOperazione, RoutingDecision decision,
                             String pathRichiesta, Integer httpStatus, long durataMs) {
-        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, decision.getModalita(),
+        inserisciLog(codIpaEnte, tipoOperazione, decision.getModalita(),
                 decision.getDestinazione(), pathRichiesta, httpStatus,
                 ESITO_OK, null, durataMs);
     }
@@ -106,6 +102,8 @@ public class TransactionLoggingService {
      * <p>Se l'inserimento nel DB fallisce, il metodo non rilancia l'eccezione.
      *
      * @param codIpaEnte      codice IPA dell'ente
+     * @param tipoOperazione  nome dell'operazione SOAP (localPart del payload,
+     *                        es. {@code paVerifyPaymentNotice})
      * @param decision        decisione di routing (puo' essere null se l'errore avviene
      *                        prima della decisione di routing)
      * @param pathRichiesta   path HTTP della richiesta SOAP
@@ -114,13 +112,13 @@ public class TransactionLoggingService {
      * @param durataMs        durata della transazione in millisecondi
      */
     @Transactional(transactionManager = "tmPa")
-    public void logErrore(String codIpaEnte, RoutingDecision decision,
+    public void logErrore(String codIpaEnte, String tipoOperazione, RoutingDecision decision,
                           String pathRichiesta, Integer httpStatus,
                           String messaggioErrore, long durataMs) {
         ModalitaRouting modalita = decision != null ? decision.getModalita() : null;
         BackendDestinatario destinazione = decision != null ? decision.getDestinazione() : null;
 
-        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, modalita, destinazione,
+        inserisciLog(codIpaEnte, tipoOperazione, modalita, destinazione,
                 pathRichiesta, httpStatus, ESITO_ERRORE,
                 truncate(messaggioErrore), durataMs);
     }
@@ -133,14 +131,17 @@ public class TransactionLoggingService {
      * e quindi non c'e' una RoutingDecision disponibile.
      *
      * @param codIpaEnte      codice IPA dell'ente (puo' essere null se non estratto)
+     * @param tipoOperazione  nome dell'operazione SOAP (localPart del payload,
+     *                        es. {@code paVerifyPaymentNotice})
      * @param pathRichiesta   path HTTP della richiesta SOAP
      * @param messaggioErrore messaggio di errore (senza dati sensibili)
      * @param durataMs        durata della transazione in millisecondi
      */
     @Transactional(transactionManager = "tmPa")
-    public void logErrorePreRouting(String codIpaEnte, String pathRichiesta,
+    public void logErrorePreRouting(String codIpaEnte, String tipoOperazione,
+                                    String pathRichiesta,
                                     String messaggioErrore, long durataMs) {
-        inserisciLog(codIpaEnte, TIPO_OPERAZIONE_DEFAULT, null, null,
+        inserisciLog(codIpaEnte, tipoOperazione, null, null,
                 pathRichiesta, null, ESITO_ERRORE,
                 truncate(messaggioErrore), durataMs);
     }
