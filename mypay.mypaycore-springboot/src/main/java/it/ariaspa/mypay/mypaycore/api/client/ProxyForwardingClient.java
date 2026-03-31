@@ -178,11 +178,12 @@ public class ProxyForwardingClient {
                                   Throwable ex) {
         log.error("Circuit breaker aperto per il backend legacy {}. "
                 + "Richiesta a {} rifiutata. Causa: {}", destinatario, requestPath, ex.getMessage());
+        // Il circuit breaker e' aperto: dal punto di vista del SIL il servizio e' temporaneamente
+        // non disponibile (503). Non propagare l'HTTP status dell'errore originale che ha causato
+        // l'apertura del circuito: quello era la causa storica, non lo stato attuale.
         throw new PiattaformaCommunicationException(
                 "Backend legacy " + destinatario + " temporaneamente non raggiungibile "
-                + "(circuit breaker aperto). Riprovare piu tardi.",
-                ex instanceof PiattaformaCommunicationException
-                        ? ((PiattaformaCommunicationException) ex).getHttpStatus()
-                        : 503);
+                + "(circuit breaker aperto). Riprovare piu' tardi.",
+                503);
     }
 }

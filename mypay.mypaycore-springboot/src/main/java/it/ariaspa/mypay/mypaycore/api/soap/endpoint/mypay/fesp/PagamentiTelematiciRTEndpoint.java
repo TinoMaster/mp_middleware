@@ -72,4 +72,12 @@ public class PagamentiTelematiciRTEndpoint extends AbstractSoapProxyEndpoint {
     protected String getDefaultPath() {
         return DEFAULT_PATH;
     }
+
+    /**
+     * Namespace del fault detail per gli endpoint MyPay FESP (area ente/pagamenti).
+     */
+    @Override
+    public String getFaultDetailNamespace() {
+        return Constants.NS_FAULT_MYPAY;
+    }
 }

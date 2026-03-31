@@ -172,12 +172,13 @@ public class PiattaformaUnitariaClient {
         log.error("Circuit breaker aperto per la Piattaforma Unitaria. "
                 + "Richiesta a {} per ente '{}' rifiutata. Causa: {}",
                 path, ente.getCodIpaEnte(), ex.getMessage());
+        // Il circuit breaker e' aperto: dal punto di vista del SIL il servizio e' temporaneamente
+        // non disponibile (503). Non propagare l'HTTP status dell'errore originale che ha causato
+        // l'apertura del circuito: quello era la causa storica, non lo stato attuale.
         throw new PiattaformaCommunicationException(
                 "Piattaforma Unitaria temporaneamente non raggiungibile (circuit breaker aperto). "
                         + "Riprovare piu' tardi.",
-                ex instanceof PiattaformaCommunicationException
-                        ? ((PiattaformaCommunicationException) ex).getHttpStatus()
-                        : 503);
+                503);
     }
 
     /**

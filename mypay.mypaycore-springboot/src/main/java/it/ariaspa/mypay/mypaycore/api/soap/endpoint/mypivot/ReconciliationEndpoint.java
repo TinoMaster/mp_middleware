@@ -262,4 +262,12 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
     protected String getDefaultPath() {
         return DEFAULT_PATH;
     }
+
+    /**
+     * Namespace del fault detail per l'endpoint MyPivot (area pivot/riconciliazione).
+     */
+    @Override
+    public String getFaultDetailNamespace() {
+        return Constants.NS_FAULT_MYPIVOT;
+    }
 }

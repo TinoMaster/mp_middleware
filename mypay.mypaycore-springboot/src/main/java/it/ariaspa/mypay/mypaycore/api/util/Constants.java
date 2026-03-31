@@ -105,4 +105,25 @@ public final class Constants {
      */
     public static final String NS_PAGAMENTI_TELEMATICI_GOV =
             "http://ws.pagamenti.telematici.gov/";
+
+    // =========================================================================
+    // Namespace URI per gli elementi fault del SOAP Detail — differenziati per area
+    //
+    // I namespace del fault detail devono corrispondere al dominio semantico
+    // dell'endpoint che genera l'errore, per rispettare i contratti WSDL originali.
+    // =========================================================================
+
+    /**
+     * Namespace per gli elementi fault degli endpoint MyPay (PA + FESP, 9 endpoint).
+     * Usato da: DovutiPagati, Esito, FlussiSPC, CCPPa, CCP, CCP25, RP, RT, AvvisiDigitali.
+     */
+    public static final String NS_FAULT_MYPAY =
+            "http://www.regione.veneto.it/pagamenti/ente/fault";
+
+    /**
+     * Namespace per gli elementi fault dell'endpoint MyPivot (riconciliazione, 1 endpoint).
+     * Usato da: ReconciliationEndpoint.
+     */
+    public static final String NS_FAULT_MYPIVOT =
+            "http://www.regione.veneto.it/pagamenti/pivot/ente/fault";
 }

@@ -3,6 +3,8 @@ package it.ariaspa.mypay.mypaycore.api.soap.endpoint;
 import it.ariaspa.mypay.mypaycore.api.client.PiattaformaUnitariaClient;
 import it.ariaspa.mypay.mypaycore.api.client.ProxyForwardingClient;
 import it.ariaspa.mypay.mypaycore.api.common.exception.CredenzialeSilNonValidaException;
+import it.ariaspa.mypay.mypaycore.api.common.exception.EnteNonIdentificabileException;
+import it.ariaspa.mypay.mypaycore.api.common.exception.PiattaformaCommunicationException;
 import it.ariaspa.mypay.mypaycore.api.domain.EnteCompleto;
 import it.ariaspa.mypay.mypaycore.api.logging.TransactionLoggingService;
 import it.ariaspa.mypay.mypaycore.api.metrics.MiddlewareMetricsService;
@@ -54,6 +56,9 @@ import java.util.Optional;
  * <p>Ogni sottoclasse concreta deve:
  * <ol>
  *   <li>Definire le costanti {@code NAMESPACE_URI} e il path PU</li>
+ *   <li>Implementare {@link #getDefaultPath()} con il path di fallback dell'endpoint</li>
+ *   <li>Implementare {@link #getFaultDetailNamespace()} con il namespace XML corretto
+ *       per i fault detail (garantisce che i SOAP Fault rispettino il contratto WSDL)</li>
  *   <li>Definire i metodi {@code @PayloadRoot} per ogni operazione SOAP</li>
  *   <li>Delegare la gestione della richiesta a {@link #processRequest(Element, MessageContext, String)}</li>
  * </ol>
@@ -197,6 +202,17 @@ public abstract class AbstractSoapProxyEndpoint {
                     operationName, decision.getModalita());
             log.debug("Risposta completa:\n{}", responseXml);
 
+            // Verifica se il backend ha risposto con un SOAP Fault.
+            // Se si', lo traduciamo in una PiattaformaCommunicationException per evitare:
+            // 1. Propagazione di dettagli interni del backend ai SIL (information leakage)
+            // 2. Incoerenza tra namespace del fault del backend e namespace del middleware
+            String faultString = estraiSoapFaultString(responseXml);
+            if (faultString != null) {
+                log.warn("Il backend ha risposto con un SOAP Fault per '{}': {}", operationName, faultString);
+                throw new PiattaformaCommunicationException(
+                        "Il backend ha risposto con un errore: " + faultString);
+            }
+
             // Estrai il contenuto del Body dalla risposta SOAP Envelope
             Element responseElement = extractBodyContent(responseXml);
 
@@ -313,13 +329,14 @@ public abstract class AbstractSoapProxyEndpoint {
                 return ente.get().getCodIpaEnte();
             }
 
-            // Codice fiscale non trovato nella cache — potrebbe non essere censito
-            throw new IllegalStateException(
+            // Codice fiscale non trovato nella cache — non censito o messaggio errato del SIL
+            throw new EnteNonIdentificabileException(
                     "identificativoDominio (codice fiscale) '" + identificativoDominio
                     + "' non corrisponde a nessun ente censito in mygov_ente");
         }
 
-        throw new IllegalStateException(
+        // Nessun identificatore ente nella richiesta SOAP — errore del SIL (fault Client)
+        throw new EnteNonIdentificabileException(
                 "Impossibile identificare l'ente dalla richiesta SOAP. "
                 + "Nessun elemento <codIpaEnte> o <identificativoDominio> trovato nel SOAP Envelope.");
     }
@@ -386,6 +403,24 @@ public abstract class AbstractSoapProxyEndpoint {
      */
     protected abstract String getDefaultPath();
 
+    /**
+     * Restituisce il namespace XML da usare nell'elemento {@code <errorCode>} del fault detail
+     * dei SOAP Fault generati dal middleware per questo endpoint.
+     *
+     * <p>Il namespace deve corrispondere al dominio semantico dell'endpoint per rispettare
+     * i contratti WSDL originali di pagoPA:
+     * <ul>
+     *   <li>Endpoint MyPay (PA + FESP): {@code http://www.regione.veneto.it/pagamenti/ente/fault}</li>
+     *   <li>Endpoint MyPivot: {@code http://www.regione.veneto.it/pagamenti/pivot/ente/fault}</li>
+     * </ul>
+     *
+     * <p>Le costanti appropriate sono centralizzate in {@link it.ariaspa.mypay.mypaycore.api.util.Constants}
+     * ({@code NS_FAULT_MYPAY} e {@code NS_FAULT_MYPIVOT}).
+     *
+     * @return il namespace URI per il fault detail di questo endpoint
+     */
+    public abstract String getFaultDetailNamespace();
+
     // =====================================================================
     // Estrazione del Body dalla risposta SOAP
     // =====================================================================
@@ -435,6 +470,57 @@ public abstract class AbstractSoapProxyEndpoint {
     // =====================================================================
     // Utility XML
     // =====================================================================
+
+    /**
+     * Verifica se un SOAP Envelope di risposta contiene un elemento {@code <Fault>}
+     * nel Body, e in caso affermativo ne restituisce il testo del {@code <faultstring>}.
+     *
+     * <p>Usato da {@link #processRequest} per intercettare i SOAP Fault originati
+     * dal backend (PU o legacy) prima di propagarli ai SIL. Il middleware li traduce
+     * in una {@link PiattaformaCommunicationException} per garantire:
+     * <ul>
+     *   <li>Coerenza del namespace del fault detail (non si espone il namespace del backend)</li>
+     *   <li>Nessun leakage di dettagli interni del backend verso i SIL</li>
+     * </ul>
+     *
+     * @param soapEnvelope la risposta XML dal backend (SOAP Envelope completo)
+     * @return il testo del {@code <faultstring>} se presente, {@code null} altrimenti
+     */
+    protected String estraiSoapFaultString(String soapEnvelope) {
+        try {
+            Document document = secureDocumentBuilderFactory.newDocumentBuilder()
+                    .parse(new InputSource(new StringReader(soapEnvelope)));
+
+            // Cerca <Fault> nel namespace SOAP 1.1
+            var faultNodes = document.getElementsByTagNameNS(
+                    "http://schemas.xmlsoap.org/soap/envelope/", "Fault");
+
+            if (faultNodes.getLength() == 0) {
+                // Prova anche senza namespace (alcune implementazioni omettono il namespace sul Fault)
+                faultNodes = document.getElementsByTagName("Fault");
+            }
+
+            if (faultNodes.getLength() > 0) {
+                Element faultElement = (Element) faultNodes.item(0);
+                // Cerca <faultstring> dentro <Fault>
+                var faultStringNodes = faultElement.getElementsByTagName("faultstring");
+                if (faultStringNodes.getLength() > 0) {
+                    return faultStringNodes.item(0).getTextContent().trim();
+                }
+                // Se non c'e' faultstring, restituisce un messaggio generico
+                return "SOAP Fault ricevuto dal backend (faultstring non disponibile)";
+            }
+
+            return null; // Nessun Fault presente
+
+        } catch (Exception e) {
+            // Se non riusciamo a parsare la risposta, non blocchiamo il flusso normale.
+            // La risposta potrebbe non essere XML o potrebbe essere malformata.
+            log.debug("Impossibile verificare la presenza di SOAP Fault nella risposta: {}",
+                    e.getMessage());
+            return null;
+        }
+    }
 
     /**
      * Converte un elemento DOM in stringa XML.
