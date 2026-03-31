@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.1.0  
-**Data**: 26 Marzo 2026  
-**Stato**: Fase 8 completata (25 Mar 2026) — 49 operazioni SOAP su 10 endpoint, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale (codIpa + codiceFiscale), 52 file sorgente; ReconciliationEndpoint (mypivot) completato con 10 operazioni
+**Versione**: 4.2.0  
+**Data**: 31 Marzo 2026  
+**Stato**: Fase 8 completata (25 Mar 2026) + miglioramenti gestione errori (31 Mar 2026) — 49 operazioni SOAP su 10 endpoint, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale (codIpa + codiceFiscale), 55 file sorgente; namespace SOAP Fault dinamico per endpoint, enum `FaultCode`, nuova eccezione `EnteNonIdentificabileException`, circuit breaker sempre HTTP 503
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -267,7 +267,7 @@ api/
 │
 ├── soap/                                    ← Endpoint SOAP lato SIL
 │   ├── endpoint/
-│   │   ├── AbstractSoapProxyEndpoint.java   (classe base: proxy trasparente con identificazione ente duale)
+│   │   ├── AbstractSoapProxyEndpoint.java   (classe base: proxy trasparente con identificazione ente duale, getFaultDetailNamespace() astratto, intercettazione SOAP Fault backend)
 │   │   ├── mypay/                           ← 4 endpoint MyPay PA (23 operazioni)
 │   │   │   ├── PagamentiTelematiciDovutiPagatiEndpoint.java    (16 operazioni)
 │   │   │   ├── PagamentiTelematiciCCPPaEndpoint.java           (4 operazioni)
@@ -282,7 +282,8 @@ api/
 │   │   └── mypivot/                         ← 1 endpoint MyPivot (1 operazione)
 │   │       └── ReconciliationEndpoint.java                     (1 operazione)
 │   └── exception/
-│       └── SoapFaultExceptionResolver.java  (5 tipi di eccezione mappati)
+│       ├── SoapFaultExceptionResolver.java  (7 tipi di eccezione mappati, Ordered.HIGHEST_PRECEDENCE, namespace dinamico)
+│       └── FaultCode.java                   (enum centralizzato dei codici fault SOAP)
 │
 ├── domain/                                  ← Modelli dati
 │   ├── ModalitaRouting.java                 (enum: PIATTAFORMA_UNITARIA, LEGACY)
@@ -313,6 +314,7 @@ api/
 │       ├── PiattaformaAuthenticationException.java
 │       ├── PiattaformaCommunicationException.java
 │       ├── EnteNonCensitoException.java     (Fase 7 — aggiornata: senza tipoOperazione)
+│       ├── EnteNonIdentificabileException.java (31 Mar 2026 — ente presente ma non identificabile dall'header SOAP)
 │       └── PathNonRiconosciutoException.java (Fase 7)
 │
 ├── health/                                  ← Health check Actuator
@@ -321,7 +323,7 @@ api/
 │   └── EnteConfigHealthIndicator.java       (Fase 9 — usa EnteCacheService)
 │
 └── util/                                    ← Utility tecniche condivise
-    ├── Constants.java                       (contenitore centralizzato delle costanti)
+    ├── Constants.java                       (contenitore centralizzato delle costanti, incluse NS_FAULT_MYPAY e NS_FAULT_MYPIVOT)
     ├── LogHelper.java                       (utility per firme metodo leggibili nei log)
     └── Utilities.java                       (helper tecnici riusabili)
 ```
@@ -1104,8 +1106,17 @@ public class NomeEndpoint extends AbstractSoapProxyEndpoint {
 
     @Override
     protected String getDefaultPath() { return "/ws/pa"; }  // o /ws/fesp, /ws/pivot
+
+    /**
+     * Restituisce il namespace da usare nel dettaglio del SOAP Fault per questo endpoint.
+     * Gli endpoint MyPay restituiscono NS_FAULT_MYPAY; l'endpoint MyPivot restituisce NS_FAULT_MYPIVOT.
+     */
+    @Override
+    protected String getFaultDetailNamespace() { return Constants.NS_FAULT_MYPAY; }
 }
 ```
+
+Il metodo `getFaultDetailNamespace()` è **obbligatorio** su tutte le sottoclassi. Permette al `SoapFaultExceptionResolver` di costruire il `<detail>` del SOAP Fault con il namespace corretto per ciascun endpoint, eliminando il namespace hardcoded MyPivot che veniva erroneamente usato per tutti gli endpoint (fix critico del 31 Mar 2026).
 
 ### Esempio: `ReconciliationEndpoint.java` (MyPivot)
 
@@ -1154,33 +1165,59 @@ L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFOR
 
 ### `SoapFaultExceptionResolver.java`
 
-**Tipo**: `@Component` + `EndpointExceptionResolver`  
+**Tipo**: `@Component` + `EndpointExceptionResolver` + `Ordered`  
 **Scopo**: Intercetta tutte le eccezioni non gestite negli endpoint SOAP e le converte in **SOAP Fault** strutturate, garantendo che i SIL ricevano sempre una risposta SOAP valida anche in caso di errore.
+
+**Priorità**: Implementa `Ordered` con `getOrder() = Ordered.HIGHEST_PRECEDENCE`, garantendo precedenza assoluta sui resolver di default di Spring WS.
 
 **Mapping delle eccezioni**:
 
-| Eccezione | SOAP Fault | Codice errore |
-|-----------|-----------|---------------|
+| Eccezione | SOAP Fault | Codice errore (`FaultCode`) |
+|-----------|-----------|------------------------------|
 | `EnteNonCensitoException` | `Client/Sender Fault` | `ENTE_NON_AUTORIZZATO` |
+| `EnteNonIdentificabileException` | `Client/Sender Fault` | `ENTE_NON_IDENTIFICABILE` |
+| `CredenzialeSilNonValidaException` | `Client/Sender Fault` | `CREDENZIALE_NON_VALIDA` |
 | `PathNonRiconosciutoException` | `Client/Sender Fault` | `PATH_NON_RICONOSCIUTO` |
 | `PiattaformaAuthenticationException` | `Server/Receiver Fault` | `AUTH_ERROR` |
 | `PiattaformaCommunicationException` | `Server/Receiver Fault` | `COMM_ERROR` |
 | Qualsiasi altra `Exception` | `Server/Receiver Fault` | `INTERNAL_ERROR` |
 
-**Logica di classificazione**: Le eccezioni di routing (`EnteNonCensitoException`, `PathNonRiconosciutoException`) generano Fault **Client** perché rappresentano errori del chiamante (ente non autorizzato o path errato). Le eccezioni di comunicazione generano Fault **Server** perché rappresentano errori interni al middleware o ai backend.
+**Logica di classificazione**: Le eccezioni di routing e identificazione ente (`EnteNonCensitoException`, `EnteNonIdentificabileException`, `PathNonRiconosciutoException`) e di credenziali (`CredenzialeSilNonValidaException`) generano Fault **Client** perché rappresentano errori del chiamante. Le eccezioni di comunicazione e autenticazione verso la PU generano Fault **Server** perché rappresentano errori interni al middleware o ai backend.
 
-**Struttura del SOAP Fault restituito al SIL**:
+**Namespace dinamico**: Il namespace del `<detail>` del Fault viene risolto chiamando `getFaultDetailNamespace()` sull'endpoint che ha gestito la richiesta (ottenuto dal `MethodEndpoint.getBean()`). In questo modo ogni endpoint usa il proprio namespace WSDL:
+- Endpoint MyPay → `Constants.NS_FAULT_MYPAY`
+- Endpoint MyPivot → `Constants.NS_FAULT_MYPIVOT`
+
+**Struttura del SOAP Fault restituito al SIL** (esempio per un endpoint MyPay):
 ```xml
 <soapenv:Fault>
     <faultcode>env:Server</faultcode>
     <faultstring xml:lang="it">Errore di comunicazione con la Piattaforma Unitaria: ...</faultstring>
     <detail>
-        <fault:errorCode xmlns:fault="http://www.regione.veneto.it/pagamenti/pivot/ente/fault">
+        <fault:errorCode xmlns:fault="http://www.regione.veneto.it/pagamenti/pa/fault">
             COMM_ERROR
         </fault:errorCode>
     </detail>
 </soapenv:Fault>
 ```
+
+---
+
+### `FaultCode.java` (31 Mar 2026)
+
+**Tipo**: `enum`  
+**Scopo**: Centralizza tutti i codici di errore SOAP Fault in un'unica enumerazione, eliminando le stringhe hardcoded sparse nel `SoapFaultExceptionResolver`.
+
+**Valori**:
+| Valore enum | Codice stringa | Tipo fault |
+|-------------|----------------|------------|
+| `ENTE_NON_AUTORIZZATO` | `"ENTE_NON_AUTORIZZATO"` | Client |
+| `ENTE_NON_IDENTIFICABILE` | `"ENTE_NON_IDENTIFICABILE"` | Client |
+| `CREDENZIALE_NON_VALIDA` | `"CREDENZIALE_NON_VALIDA"` | Client |
+| `PATH_NON_RICONOSCIUTO` | `"PATH_NON_RICONOSCIUTO"` | Client |
+| `AUTH_ERROR` | `"AUTH_ERROR"` | Server |
+| `COMM_ERROR` | `"COMM_ERROR"` | Server |
+| `INTERNAL_ERROR` | `"INTERNAL_ERROR"` | Server |
 
 ---
 
@@ -1202,9 +1239,12 @@ L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFOR
 - Timeout nella comunicazione HTTP
 - Errore di rete (connessione rifiutata, DNS non risolvibile)
 - Risposta HTTP 4xx o 5xx (diversa da 401)
-- Circuit breaker aperto
+- Circuit breaker aperto (sempre con `httpStatus = 503`)
+- SOAP Fault ricevuto dal backend (intercettato e convertito in `PiattaformaCommunicationException`)
 
-Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il codice HTTP nel messaggio di errore restituito al SIL.
+Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il codice HTTP nel messaggio di errore restituito al SIL. Il circuit breaker imposta **sempre HTTP 503** (Service Unavailable), indipendentemente dal codice HTTP dell'errore originale che ha causato l'apertura del breaker.
+
+**Intercettazione SOAP Fault dal backend (31 Mar 2026)**: `AbstractSoapProxyEndpoint.processRequest()` verifica la risposta del backend prima di restituirla al SIL. Se la risposta contiene un `<Fault>` SOAP, viene estratto il testo del `<faultstring>` e lanciata una `PiattaformaCommunicationException`, evitando che namespace e struttura interna del backend vengano esposti ai SIL.
 
 ---
 
@@ -1220,6 +1260,19 @@ Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il c
 > Il messaggio del SOAP Fault non include più il tipo di operazione.
 
 **SOAP Fault generato**: `Client/Sender Fault` con codice `ENTE_NON_AUTORIZZATO`
+
+---
+
+### `EnteNonIdentificabileException.java` (31 Mar 2026)
+
+**Tipo**: `RuntimeException`  
+**Quando viene lanciata**:
+- L'header SOAP della richiesta non contiene né `codIpaEnte` né `identificativoDominio` utilizzabili per identificare l'ente
+- L'`AbstractSoapProxyEndpoint` non riesce a estrarre un identificativo ente valido dalla richiesta (sostituisce il precedente `IllegalStateException` che generava erroneamente un Fault **Server**)
+
+**SOAP Fault generato**: `Client/Sender Fault` con codice `ENTE_NON_IDENTIFICABILE`
+
+> **Nota**: Prima di questo fix (31 Mar 2026), questa condizione lanciava una `IllegalStateException` che veniva mappata come `INTERNAL_ERROR` (Fault Server), inducendo erroneamente il SIL a ritenere il problema lato server.
 
 ---
 
@@ -1503,7 +1556,7 @@ Il circuit breaker protegge il sistema da chiamate continue a un servizio non di
 - Eccezioni registrate: `PiattaformaCommunicationException`, `ResourceAccessException`
 - Eccezioni ignorate: `PiattaformaAuthenticationException` (gestita con refresh)
 
-**Fallback**: Quando il circuit breaker è aperto, viene invocato `forwardSoapRequestFallback()` che lancia una `PiattaformaCommunicationException` con HTTP 503, che il `SoapFaultExceptionResolver` converte in `COMM_ERROR`.
+**Fallback**: Quando il circuit breaker è aperto, viene invocato `forwardSoapRequestFallback()` che lancia una `PiattaformaCommunicationException` con **sempre HTTP 503** (Service Unavailable), indipendentemente dal codice HTTP dell'errore originale. Il `SoapFaultExceptionResolver` la converte in `COMM_ERROR`. Prima del fix del 31 Mar 2026, il fallback propagava il codice HTTP dell'errore originale (es. 404), causando messaggi confusi come "HTTP 404 — circuit breaker aperto".
 
 ### Retry (`piattaformaUnitaria`)
 
@@ -1611,7 +1664,7 @@ Il testing del middleware avviene esclusivamente tramite la **collection Postman
 ### Build state attuale
 
 ```
-mvn compile → BUILD SUCCESS (52 source files, 0 errori)
+mvn compile → BUILD SUCCESS (55 source files, 0 errori)
 mvn test    → NON eseguibile (src/test/ eliminata — nessuna dipendenza di test nel pom.xml)
 ```
 
