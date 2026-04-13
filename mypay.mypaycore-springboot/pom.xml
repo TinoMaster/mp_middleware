@@ -77,6 +77,12 @@
 			<artifactId>spring-boot-starter-web-services</artifactId>
 		</dependency>
 
+		<!-- Spring MVC: per esporre endpoint REST (upload proxy per i flussi di import) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+
 		<!-- JAXB API: per marshalling/unmarshalling XML SOAP -->
 		<dependency>
 			<groupId>jakarta.xml.bind</groupId>

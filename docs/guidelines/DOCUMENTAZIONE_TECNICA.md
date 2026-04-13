@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.2.0  
-**Data**: 31 Marzo 2026  
-**Stato**: Fase 8 completata (25 Mar 2026) + miglioramenti gestione errori (31 Mar 2026) — 49 operazioni SOAP su 10 endpoint, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale (codIpa + codiceFiscale), 55 file sorgente; namespace SOAP Fault dinamico per endpoint, enum `FaultCode`, nuova eccezione `EnteNonIdentificabileException`, circuit breaker sempre HTTP 503
+**Versione**: 4.3.0  
+**Data**: 10 Aprile 2026  
+**Stato**: Proxy Upload Flusso Import completato (10 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -24,16 +24,17 @@
 8. [Modulo Persistenza (domain + repository)](#8-modulo-persistenza-domain--repository)
 9. [Modulo Routing](#9-modulo-routing)
 10. [Modulo Endpoint SOAP](#10-modulo-endpoint-soap)
-11. [Gestione degli Errori](#11-gestione-degli-errori)
-12. [Monitoraggio e Health Check](#12-monitoraggio-e-health-check)
-13. [Resilienza](#13-resilienza)
-14. [Ambienti e Profili](#14-ambienti-e-profili)
-15. [Test Unitari](#15-test-unitari)
-16. [Come avviare il progetto](#16-come-avviare-il-progetto)
-17. [Come testare il flusso completo](#17-come-testare-il-flusso-completo)
-18. [Cosa NON è ancora implementato](#18-cosa-non-è-ancora-implementato)
-19. [Prossimi passi — Fasi Future](#19-prossimi-passi--fasi-future)
-20. [Agenti OpenCode](#20-agenti-opencode)
+11. [Proxy Upload Flusso Import](#11-proxy-upload-flusso-import)
+12. [Gestione degli Errori](#12-gestione-degli-errori)
+13. [Monitoraggio e Health Check](#13-monitoraggio-e-health-check)
+14. [Resilienza](#14-resilienza)
+15. [Ambienti e Profili](#15-ambienti-e-profili)
+16. [Test](#16-test)
+17. [Come avviare il progetto](#17-come-avviare-il-progetto)
+18. [Come testare il flusso completo](#18-come-testare-il-flusso-completo)
+19. [Cosa NON è ancora implementato](#19-cosa-non-è-ancora-implementato)
+20. [Prossimi passi — Fasi Future](#20-prossimi-passi--fasi-future)
+21. [Agenti OpenCode](#21-agenti-opencode)
 
 ---
 
@@ -120,6 +121,7 @@ Il progetto è costruito su **SpringLine2** (versione 2027.01.01), un framework 
 | Dipendenza | Versione | Scopo |
 |-----------|---------|-------|
 | `spring-boot-starter-web-services` | gestita da Spring Boot | Server SOAP (riceve richieste dai SIL) |
+| `spring-boot-starter-web` | gestita da Spring Boot | Controller REST (`@RestController`) — aggiunto per il Proxy Upload Flusso Import |
 | `jakarta.xml.bind-api` | gestita da Spring Boot | Marshalling/unmarshalling XML |
 | `jaxb-runtime` | gestita da Spring Boot | Implementazione runtime JAXB |
 | `resilience4j-spring-boot3` | 2.2.0 | Circuit Breaker e Retry |
@@ -242,7 +244,7 @@ Tutti i sorgenti si trovano sotto:
 
 ```
 api/
-├── Application.java                         ← Entry point Spring Boot
+├── Application.java                         ← Entry point Spring Boot (@EnableScheduling)
 │
 ├── config/                                  ← Configurazione applicazione
 │   ├── PiattaformaUnitariaConfig.java       (OAuth2 e URL Piattaforma Unitaria)
@@ -263,13 +265,19 @@ api/
 │
 ├── client/                                  ← Client HTTP
 │   ├── PiattaformaUnitariaClient.java       (verso PU con OAuth2 per-ente — nessun interceptor)
-│   └── ProxyForwardingClient.java           (forward legacy senza OAuth2 — Fase 5)
+│   ├── ProxyForwardingClient.java           (forward legacy senza OAuth2 — Fase 5)
+│   └── UploadForwardingClient.java          (upload file verso backend legacy o PU — Proxy Upload)
+│
+├── upload/                                  ← Proxy upload flusso import
+│   ├── UploadProxyEntry.java                (DTO immutabile per la cache: uploadUrl, modalità, ente...)
+│   ├── UploadProxyCacheService.java         (cache TTL in-memory one-shot con pulizia @Scheduled)
+│   └── UploadFlussoController.java          (@RestController — POST /api/upload/flusso)
 │
 ├── soap/                                    ← Endpoint SOAP lato SIL
 │   ├── endpoint/
 │   │   ├── AbstractSoapProxyEndpoint.java   (classe base: proxy trasparente con identificazione ente duale, getFaultDetailNamespace() astratto, intercettazione SOAP Fault backend)
 │   │   ├── mypay/                           ← 4 endpoint MyPay PA (23 operazioni)
-│   │   │   ├── PagamentiTelematiciDovutiPagatiEndpoint.java    (16 operazioni)
+│   │   │   ├── PagamentiTelematiciDovutiPagatiEndpoint.java    (16 operazioni — con post-processing paaSILAutorizzaImportFlusso)
 │   │   │   ├── PagamentiTelematiciCCPPaEndpoint.java           (4 operazioni)
 │   │   │   ├── PagamentiTelematiciEsitoEndpoint.java           (1 operazione)
 │   │   │   └── PagamentiTelematiciFlussiSPCEndpoint.java       (2 operazioni)
@@ -1161,7 +1169,276 @@ L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFOR
 
 ---
 
-## 11. Gestione degli Errori
+## 11. Proxy Upload Flusso Import
+
+Questa funzionalità risolve un problema specifico dei flussi di import: la Piattaforma Unitaria (e il backend legacy) restituiscono, in risposta all'operazione `paaSILAutorizzaImportFlusso`, un URL temporaneo (`uploadUrl`) al quale il SIL deve poi caricare il file. Il SIL però non è in grado di gestire l'autenticazione OAuth2 (richiesta dalla PU) né conosce la differenza tra modalità PU e LEGACY. Il middleware si interpone come proxy trasparente anche per questo secondo passo dell'upload.
+
+### Flusso complessivo
+
+```
+Passo 1 — Autorizzazione (SOAP)
+──────────────────────────────
+SIL → POST /ws/pa/PagamentiTelematiciDovutiPagati
+      Body: <paaSILAutorizzaImportFlusso>...</paaSILAutorizzaImportFlusso>
+        │
+        ▼
+  PagamentiTelematiciDovutiPagatiEndpoint
+  (post-processing attivo solo per paaSILAutorizzaImportFlusso)
+        │
+        ▼
+  Middleware → Backend (PU o LEGACY)
+        │
+        ◄── risposta backend:
+              uploadUrl          (es. https://api.uat.p4pa.pagopa.it/pu/fileshare/...)
+              authorizationToken (token monouso per l'upload)
+              requestToken
+              importPath
+        │
+        ▼  post-processing:
+  a. Salva in UploadProxyCacheService:
+        authorizationToken → UploadProxyEntry {
+            uploadUrl originale, modalitaRouting, codIpaEnte,
+            EnteCompleto (credenziali OAuth2 per-ente)
+        }
+  b. Sostituisce uploadUrl nella risposta XML con:
+        ${middleware.upload.proxy.base-url}/api/upload/flusso
+        │
+        ▼
+  SIL riceve la risposta modificata:
+        uploadUrl = http://localhost:8086/api/upload/flusso
+        authorizationToken = <token-monouso>
+
+Passo 2 — Upload file (REST multipart)
+──────────────────────────────────────
+SIL → POST /api/upload/flusso
+      Content-Type: multipart/form-data
+      Parametri: authorizationToken=<token>, file=<contenuto binario>
+        │
+        ▼
+  UploadFlussoController
+  → UploadProxyCacheService.getAndRemove(authorizationToken)
+    → recupera UploadProxyEntry (one-shot: rimossa dalla cache dopo il prelievo)
+    → se non trovata → HTTP 400 (token non valido o scaduto)
+        │
+        ▼
+  UploadForwardingClient.inoltraUpload(entry, authorizationToken, file)
+    → se modalità LEGACY:
+        POST multipart verso uploadUrl originale
+        Parametri: authorizationToken + file
+        (nessun token OAuth2 aggiunto)
+    → se modalità PIATTAFORMA_UNITARIA:
+        POST multipart verso uploadUrl originale
+        Parametri: authorizationToken + file
+        Header: Authorization: Bearer <token-OAuth2-per-ente>
+        │
+        ▼
+  Risposta del backend → restituita as-is al SIL (HTTP status + body)
+```
+
+### Componenti implementati
+
+#### `UploadProxyEntry.java` (DTO immutabile)
+
+**Tipo**: Classe immutabile (record o POJO con costruttore)  
+**Pacchetto**: `api/upload/`  
+**Scopo**: Rappresenta la voce della cache di proxy upload. Viene creata durante il post-processing di `paaSILAutorizzaImportFlusso` e consumata (one-shot) da `UploadFlussoController`.
+
+**Campi**:
+
+| Campo | Tipo | Descrizione |
+|-------|------|-------------|
+| `uploadUrl` | `String` | URL originale di upload restituito dal backend (PU o legacy) |
+| `modalitaRouting` | `ModalitaRouting` | Modalità di routing dell'ente (PU o LEGACY) |
+| `codIpaEnte` | `String` | Codice IPA dell'ente — per logging e metriche |
+| `ente` | `EnteCompleto` | Oggetto ente con credenziali OAuth2 (necessario per PU) |
+| `createdAt` | `Instant` | Timestamp di creazione — usato per la pulizia TTL |
+
+---
+
+#### `UploadProxyCacheService.java` (cache TTL in-memory)
+
+**Tipo**: `@Service`  
+**Pacchetto**: `api/upload/`  
+**Scopo**: Mantiene una mappa in-memory `authorizationToken → UploadProxyEntry` con TTL configurabile e semantica **one-shot** (ogni entry viene rimossa al primo utilizzo). Una task schedulata pulisce periodicamente le entry scadute.
+
+**Struttura interna**:
+
+| Componente | Tipo | Scopo |
+|-----------|------|-------|
+| `cache` | `ConcurrentHashMap<String, UploadProxyEntry>` | Mappa thread-safe token → entry |
+
+**Comportamento one-shot**: Il metodo `getAndRemove(authorizationToken)` restituisce l'entry **e la rimuove contestualmente** dalla cache. Questo garantisce che ogni token di upload possa essere usato una sola volta, in analogia con la semantica del token monouso del backend.
+
+**Pulizia periodica con `@Scheduled`**: Il metodo di pulizia viene invocato automaticamente ogni `middleware.upload.proxy.cleanup-interval-ms` millisecondi (default: 300000 ms = 5 minuti). Rimuove tutte le entry il cui `createdAt` supera il TTL configurato. Questo meccanismo richiede `@EnableScheduling` su `Application.java`.
+
+**Properties configurabili**:
+
+```properties
+middleware.upload.proxy.cache-ttl-seconds=3600
+middleware.upload.proxy.cleanup-interval-ms=300000
+```
+
+**Metodi pubblici**:
+
+| Metodo | Descrizione |
+|--------|-------------|
+| `put(authorizationToken, entry)` | Inserisce una nuova entry nella cache |
+| `getAndRemove(authorizationToken)` | Recupera l'entry e la rimuove (one-shot) — restituisce `Optional.empty()` se assente o scaduta |
+| `size()` | Numero di entry attualmente in cache |
+
+---
+
+#### `UploadFlussoController.java` (endpoint REST)
+
+**Tipo**: `@RestController`  
+**Pacchetto**: `api/upload/`  
+**Scopo**: Espone l'endpoint REST `POST /api/upload/flusso` al quale il SIL invia il file dopo aver ricevuto la risposta modificata di `paaSILAutorizzaImportFlusso`.
+
+**Dipendenza aggiuntiva nel `pom.xml`**: `spring-boot-starter-web` (aggiunto per abilitare `@RestController` in un'applicazione che in precedenza dipendeva solo da `spring-boot-starter-web-services`).
+
+**Endpoint**:
+
+```
+POST /api/upload/flusso
+Content-Type: multipart/form-data
+
+Parametri:
+  authorizationToken  (String, obbligatorio) — token monouso ricevuto dal SIL
+  file                (MultipartFile, obbligatorio) — file da caricare
+```
+
+**Flusso interno**:
+
+```
+1. Recupera l'entry dalla cache: UploadProxyCacheService.getAndRemove(authorizationToken)
+   → se assente: risponde HTTP 400 (token non valido, già usato, o scaduto)
+2. Delega a UploadForwardingClient.inoltraUpload(entry, authorizationToken, file)
+3. Restituisce la risposta del backend al SIL (HTTP status + body)
+```
+
+**Configurazione multipart**:
+
+```properties
+spring.servlet.multipart.max-file-size=100MB
+spring.servlet.multipart.max-request-size=100MB
+```
+
+---
+
+#### `UploadForwardingClient.java` (client HTTP upload)
+
+**Tipo**: `@Service`  
+**Pacchetto**: `api/client/`  
+**Scopo**: Client HTTP responsabile dell'inoltro del file al backend appropriato (PU o LEGACY), costruendo la richiesta multipart corretta in base alla modalità di routing.
+
+**Differenza tra modalità**:
+
+| Modalità | Header aggiunto | Autenticazione |
+|----------|----------------|----------------|
+| `LEGACY` | nessuno | Solo `authorizationToken` nel multipart |
+| `PIATTAFORMA_UNITARIA` | `Authorization: Bearer <token-OAuth2>` | `authorizationToken` nel multipart + Bearer OAuth2 |
+
+Per la modalità PU, il Bearer token viene ottenuto chiamando `OAuthTokenService.getAccessToken(ente.getCodIpaEnte(), ente.getClientId(), ente.getClientSecret())`, esattamente come avviene in `PiattaformaUnitariaClient`.
+
+**Configurazione HTTP**:
+
+```properties
+middleware.upload.proxy.connect-timeout-ms=10000
+middleware.upload.proxy.read-timeout-ms=120000
+```
+
+Il timeout di lettura è volutamente più alto (120 secondi) rispetto ai client SOAP (30 secondi) per accomodare upload di file di grandi dimensioni.
+
+---
+
+#### Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint.java`
+
+**File modificato**: `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java`
+
+Il post-processing è attivato **esclusivamente** per l'operazione `paaSILAutorizzaImportFlusso`. Tutte le altre 15 operazioni dell'endpoint rimangono proxy trasparenti senza modifiche alla risposta.
+
+**Logica di post-processing**:
+
+```
+risposta XML ricevuta dal backend
+        │
+        ▼
+  Contiene <uploadUrl> e <authorizationToken>?
+  (operazione paaSILAutorizzaImportFlusso)
+        │
+   No ──┤──► restituisce la risposta invariata al SIL (proxy trasparente)
+        │
+   Sì ──┤
+        ▼
+  Estrae uploadUrl e authorizationToken dalla risposta XML
+        │
+        ▼
+  Crea UploadProxyEntry { uploadUrl, modalitaRouting, codIpaEnte, ente, createdAt=now }
+        │
+        ▼
+  UploadProxyCacheService.put(authorizationToken, entry)
+        │
+        ▼
+  Sostituisce uploadUrl nella risposta XML con:
+  ${middleware.upload.proxy.base-url}/api/upload/flusso
+        │
+        ▼
+  Restituisce la risposta modificata al SIL
+```
+
+**Nota**: L'`EnteCompleto` (con le credenziali OAuth2) è disponibile nell'endpoint tramite la `RoutingDecision` già calcolata durante il flusso normale di `processRequest()`.
+
+---
+
+### Properties introdotte
+
+Tutte le properties sono definite nel blocco `middleware.upload.proxy.*` e in `spring.servlet.multipart.*`.
+
+**`application.properties`** (configurazione base — valori predefiniti):
+
+```properties
+# URL base del middleware esposto ai SIL per l'upload
+middleware.upload.proxy.base-url=${MIDDLEWARE_UPLOAD_BASE_URL:http://localhost:8086}
+
+# TTL delle entry in cache (secondi) — default 1 ora
+middleware.upload.proxy.cache-ttl-seconds=3600
+
+# Timeout connessione verso il backend di upload (ms)
+middleware.upload.proxy.connect-timeout-ms=10000
+
+# Timeout lettura risposta dall'upload (ms) — alto per file grandi
+middleware.upload.proxy.read-timeout-ms=120000
+
+# Intervallo di pulizia delle entry scadute (ms) — default 5 minuti
+middleware.upload.proxy.cleanup-interval-ms=300000
+
+# Limite dimensione file e richiesta multipart
+spring.servlet.multipart.max-file-size=100MB
+spring.servlet.multipart.max-request-size=100MB
+```
+
+**`application-dev.properties`** (override per sviluppo):
+
+```properties
+# TTL ridotto in dev per facilitare i test (10 minuti invece di 1 ora)
+middleware.upload.proxy.cache-ttl-seconds=600
+```
+
+---
+
+### Modifiche ad `Application.java`
+
+```java
+@SpringBootApplication
+@EnableScheduling   // ← aggiunto per abilitare @Scheduled in UploadProxyCacheService
+public class Application { ... }
+```
+
+`@EnableScheduling` è necessario per attivare il meccanismo di pulizia periodica delle entry scadute nella `UploadProxyCacheService`.
+
+---
+
+## 12. Gestione degli Errori
 
 ### `SoapFaultExceptionResolver.java`
 
@@ -1286,7 +1563,7 @@ Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il c
 
 ---
 
-## 12. Monitoraggio e Health Check
+## 13. Monitoraggio e Health Check
 
 Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 
@@ -1461,7 +1738,7 @@ Contiene componenti riusabili e trasversali, da usare per evitare duplicazione d
 
 ---
 
-## 13. Resilienza
+## 14. Resilienza
 
 Il middleware implementa la resilienza tramite la libreria **Resilience4j** (versione Spring Boot 3), applicata al metodo `PiattaformaUnitariaClient.forwardSoapRequest()`.
 
@@ -1571,7 +1848,7 @@ Il retry riprova automaticamente le chiamate fallite con backoff esponenziale.
 
 ---
 
-## 14. Ambienti e Profili
+## 15. Ambienti e Profili
 
 Il progetto utilizza attualmente **un solo profilo attivo**: `dev`. I profili `uat` e `prod` sono stati rimossi per semplificare l'ambiente di sviluppo; verranno ricreati quando necessario per il deployment in ambienti superiori.
 
@@ -1635,7 +1912,7 @@ I profili `uat` e `prod` sono stati rimossi nella fase di semplificazione dell'a
 
 ---
 
-## 15. Test
+## 16. Test
 
 > **Nota** (refactoring multi-ente, 24 Mar 2026): L'intera directory `src/test/` è stata
 > **eliminata** insieme alle dipendenze `spring-boot-starter-test` e `spring-ws-test` dal `pom.xml`.
@@ -1695,7 +1972,7 @@ Per i dettagli sui test E2E, vedere `docs/procedures/GUIDA_TEST_POSTMAN_END_TO_E
 
 ---
 
-## 16. Come avviare il progetto
+## 17. Come avviare il progetto
 
 ### Pre-requisiti
 
@@ -1744,7 +2021,7 @@ Il POM padre corporativo (`it.ariaspa:cm:1.0.0`) ha un plugin enforcer che verif
 
 ---
 
-## 17. Come testare il flusso completo
+## 18. Come testare il flusso completo
 
 ### 17.1 Test con profilo `dev` (PU UAT reale) — TEST END-TO-END
 
@@ -1855,9 +2132,9 @@ Risposta attesa: `{"status":"UP","details":{"stato":"Token OAuth2 in cache valid
 
 ---
 
-## 18. Cosa NON è ancora implementato
+## 19. Cosa NON è ancora implementato
 
-Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora (Fasi 1-7 e 9).
+Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora.
 
 | Funzionalità | Stato | Fase prevista | Note |
 |-------------|-------|---------------|------|
@@ -1865,8 +2142,9 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 | Routing per modalità (PU vs legacy) | ✅ Implementato | Fase 7 + Fase 10 | `RoutingDecisionService` — decide dove instradare in base a path + presenza config PU |
 | Log transazionale, audit, metriche | ✅ Implementato | Fase 9 | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
 | Credenziali OAuth2 per-ente | ✅ Implementato | Fase 10 | `mygov_ente_config_pu` — ogni ente ha il proprio `client_id` e `client_secret` |
-| Logica di business (riconciliazione, tesoreria) | Non implementata | — | L'endpoint attuale fa solo forwarding del payload |
-| Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche |
+| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` |
+| Logica di business (riconciliazione, tesoreria) | Non implementata | — | Gli endpoint fanno solo forwarding del payload |
+| Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche (salvo il post-processing upload) |
 | Validazione business dei dati in ingresso | Non implementata | — | Spring WS valida solo il namespace/localPart |
 | Endpoint SOAP aggiuntivi | ✅ Implementato | Fase 8 | 40 operazioni su 10 endpoint — `AbstractSoapProxyEndpoint` + 4 MyPay PA + 5 MyPay FESP + 1 MyPivot, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale |
 | Contract-first (WSDL/XSD) | Non implementato | — | Approccio contract-last corrente |
@@ -1877,7 +2155,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 ---
 
-## 19. Prossimi passi — Fasi Future
+## 20. Prossimi passi — Fasi Future
 
 > **Nota**: Le fasi elencate qui sono allineate con `docs/guidelines/Plan.md`, che è il
 > documento di riferimento autoritativo per il piano di implementazione.
@@ -1896,6 +2174,21 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 | Fase 8 | ✅ | Endpoint SOAP completi: 40 operazioni su 10 endpoint, `AbstractSoapProxyEndpoint`, identificazione ente duale, cache duale, 52 file sorgente |
 | Fase 9 | ✅ | Log transazionale, metriche Micrometer, health check enti configurati, 124 test |
 | Fase 10 | ✅ | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
+| Fase 11 | ✅ | Proxy upload flusso import: `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` |
+
+### Fase 11 — Proxy Upload Flusso Import ✅ (completata)
+
+**Obiettivo**: Implementare il meccanismo di proxy per l'upload dei flussi di import, consentendo ai SIL di caricare i file senza gestire direttamente OAuth2 né distinguere tra modalità PU e LEGACY.
+
+**Risultato** (10 Apr 2026): Implementato il flusso completo in due passi (autorizzazione SOAP + upload REST multipart), con:
+- `UploadProxyEntry` — DTO immutabile per la cache
+- `UploadProxyCacheService` — cache TTL one-shot con pulizia periodica `@Scheduled`
+- `UploadFlussoController` — `@RestController` su `POST /api/upload/flusso`
+- `UploadForwardingClient` — client HTTP per l'inoltro del file (legacy e PU con Bearer OAuth2)
+- Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` per `paaSILAutorizzaImportFlusso`
+- `@EnableScheduling` su `Application.java`
+- Dipendenza `spring-boot-starter-web` aggiunta al `pom.xml`
+- Properties `middleware.upload.proxy.*` e `spring.servlet.multipart.*`
 
 ### Fase 8 — Endpoint SOAP Completi ✅ (completata)
 
@@ -1912,7 +2205,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 ---
 
-## 20. Agenti OpenCode
+## 21. Agenti OpenCode
 
 Il progetto utilizza **OpenCode** come strumento di sviluppo assistito da AI. Gli agenti personalizzati sono definiti in `.opencode/agents/` e le regole globali per tutti gli agenti si trovano in `AGENTS.md` nella root del repository.
 
@@ -1970,3 +2263,9 @@ Il file `AGENTS.md` nella root del progetto definisce:
 | **mygov_ente_config_pu** | Tabella del middleware che contiene le credenziali OAuth2 per-ente per la Piattaforma Unitaria — relazione 1:1 con `mygov_ente` |
 | **EnteCompleto** | Aggregato Java che unisce `Ente` + `EnteConfigPu` — usato da `EnteCacheService` e `RoutingDecisionService` |
 | **EnteCacheService** | Servizio che mantiene in cache (TTL configurabile) il risultato di `mygov_ente LEFT JOIN mygov_ente_config_pu` per evitare query DB a ogni richiesta SOAP |
+| **UploadProxyEntry** | DTO immutabile che rappresenta una voce nella cache del proxy upload: contiene l'`uploadUrl` originale del backend, la modalità di routing, il codice IPA e l'`EnteCompleto` |
+| **UploadProxyCacheService** | Cache TTL in-memory one-shot che associa l'`authorizationToken` all'`UploadProxyEntry` corrispondente — ogni entry è consumabile una sola volta |
+| **UploadFlussoController** | Controller REST (`POST /api/upload/flusso`) che riceve il file dal SIL e lo inoltra al backend originale tramite `UploadForwardingClient` |
+| **UploadForwardingClient** | Client HTTP che esegue il POST multipart del file verso il backend (legacy o PU) aggiungendo l'`Authorization: Bearer` solo in modalità `PIATTAFORMA_UNITARIA` |
+| **authorizationToken** | Token monouso restituito dal backend in risposta a `paaSILAutorizzaImportFlusso` — usato come chiave nella cache del proxy upload e come parametro nell'upload del file |
+| **uploadUrl** | URL temporaneo restituito dal backend al quale caricare il file di import — sostituito dal middleware con l'URL del proprio endpoint `POST /api/upload/flusso` prima di rispondere al SIL |

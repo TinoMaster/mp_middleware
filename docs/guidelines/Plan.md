@@ -63,6 +63,7 @@ MIDDLEWARE
 | Fase 8 | ✅ Completata | Endpoint SOAP completi — 9 gruppi MyPay (40 operazioni) + refactoring base class |
 | Fase 9 | ✅ Completata | Log transazionale, audit, metriche |
 | Fase 10 | ✅ Completata | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
+| Fase 11 | ✅ Completata | Proxy upload flusso import: cache one-shot, endpoint REST `/api/upload/flusso`, post-processing `paaSILAutorizzaImportFlusso` |
 
 ---
 
@@ -924,6 +925,145 @@ SIL → POST /ws/pivot/...
 
 ---
 
+## Fase 11 - Proxy Upload Flusso Import ✅
+
+**Data**: 10 Aprile 2026
+**Risultato**: `mvn compile` → BUILD SUCCESS
+
+**Obiettivo**: Consentire ai SIL di caricare i file di import flusso tramite il middleware,
+senza dover conoscere l'URL reale del backend (legacy o PU). Il flusso si divide in due passi:
+
+1. Il SIL chiama l'operazione SOAP `paaSILAutorizzaImportFlusso` → il middleware esegue il
+   proxy verso il backend e post-processa la risposta, sostituendo l'URL di upload con quella
+   del middleware e salvando i dati originali in cache.
+2. Il SIL carica il file su `POST /api/upload/flusso` del middleware → il middleware recupera
+   l'entry dalla cache (one-shot), ottiene l'URL originale del backend e inoltra il file.
+
+### 11.1 `UploadProxyEntry` ✅
+
+**File creato**: `upload/UploadProxyEntry.java`
+
+DTO immutabile che rappresenta un'entry nella cache del proxy upload. Salva:
+- `uploadUrlOriginale` — URL originale di upload del backend (legacy o PU)
+- `authorizationToken` — token JWT generato dal backend per l'upload
+- `requestToken` — UUID univoco della richiesta di import
+- `importPath` — percorso relativo per l'import (es. `/IMPORT`)
+- `modalitaRouting` — PIATTAFORMA_UNITARIA o LEGACY
+- `codIpaEnte` — codice IPA dell'ente richiedente
+- `timestampCreazione` — usato per il calcolo del TTL
+
+Metodi di convenienza: `isScaduta(ttlSecondi)`, `isPiattaformaUnitaria()`.
+Il metodo `toString()` esclude `uploadUrlOriginale` e `authorizationToken` per sicurezza.
+
+### 11.2 `UploadProxyCacheService` ✅
+
+**File creato**: `upload/UploadProxyCacheService.java`
+
+Servizio `@Service` che gestisce la cache in memoria (thread-safe via `ConcurrentHashMap`)
+delle entry del proxy upload:
+
+- `salva(authorizationToken, entry)` — salva l'entry nella cache
+- `recuperaERimuovi(authorizationToken)` — recupera e rimuove l'entry (one-shot); restituisce
+  `Optional.empty()` se l'entry non esiste o è scaduta
+- `puliziaEntryScadute()` — task `@Scheduled` eseguito ogni 5 minuti per evitare memory leak
+- `dimensioneCache()` — numero di entry presenti (per health check / metriche)
+
+Il TTL è configurabile via `middleware.upload.proxy.cache-ttl-seconds` (default: 3600s).
+
+### 11.3 `UploadFlussoController` ✅
+
+**File creato**: `upload/UploadFlussoController.java`
+
+Controller `@RestController` che espone l'endpoint `POST /api/upload/flusso`:
+
+1. Estrae il file multipart dalla richiesta
+2. Recupera l'entry dalla cache usando l'`authorizationToken` (one-shot)
+3. Inoltra il file al backend (legacy o PU) tramite `UploadForwardingClient`
+4. Restituisce la risposta del backend al SIL
+
+La risposta di errore replica il formato di `MyBoxController.uploadByWS` del backend:
+una lista JSON con oggetti `{codice, descrizione}` e HTTP 200 (per compatibilità col backend).
+
+### 11.4 `UploadForwardingClient` ✅
+
+**File creato**: `client/UploadForwardingClient.java`
+
+Client HTTP `@Service` per l'inoltro multipart verso i backend. Due metodi principali:
+
+| Metodo | Backend | Auth | Circuit Breaker |
+|--------|---------|------|----------------|
+| `inoltraAlLegacy(uploadUrl, authToken, file)` | Legacy mypay | Nessuna | `backendLegacy` |
+| `inoltraAllaPU(uploadUrl, authToken, file, codIpaEnte)` | PU | OAuth2 Bearer + retry 401 | `piattaformaUnitaria` |
+
+Il `RestTemplate` è configurato con `setBufferRequestBody(false)` per evitare di caricare
+file grandi in memoria. I timeout (connect: 10s, read: 120s) sono più elevati rispetto ai
+client SOAP per gestire upload di file di grandi dimensioni.
+
+### 11.5 Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` ✅
+
+**File modificato**: `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java`
+
+L'operazione `paaSILAutorizzaImportFlusso` è stata separata dalle altre 15 operazioni del
+gruppo per aggiungere il post-processing della risposta:
+
+1. Chiama `processRequest()` della classe base (proxy trasparente verso il backend)
+2. Post-processa la risposta XML:
+   - Estrae `uploadUrl` e `authorizationToken` dalla risposta del backend
+   - Crea un'`UploadProxyEntry` e la salva in `UploadProxyCacheService`
+   - Riscrive l'`uploadUrl` nella risposta con l'URL del middleware
+     (`${middleware.upload.proxy.base-url}/api/upload/flusso`)
+3. Se il post-processing fallisce, la risposta originale viene restituita al SIL invariata
+   (fail-safe, con log di warning)
+
+### 11.6 `Application.java` aggiornata ✅
+
+**File modificato**: `Application.java`
+
+Aggiunta l'annotazione `@EnableScheduling` per abilitare il task pianificato di pulizia
+della cache (`UploadProxyCacheService.puliziaEntryScadute()`).
+
+### 11.7 Dipendenze aggiunte ✅
+
+| Dipendenza | Motivo |
+|-----------|--------|
+| `spring-boot-starter-web` | Necessario per `@RestController`, `MultipartFile`, `RestTemplate` |
+
+### 11.8 Proprietà configurate ✅
+
+| Proprietà | Default | Descrizione |
+|-----------|---------|-------------|
+| `middleware.upload.proxy.base-url` | `http://localhost:8086` | URL base del middleware esposta ai SIL |
+| `middleware.upload.proxy.cache-ttl-seconds` | `3600` (dev: `600`) | TTL delle entry in cache (secondi) |
+| `middleware.upload.proxy.connect-timeout-ms` | `10000` | Timeout di connessione per upload (ms) |
+| `middleware.upload.proxy.read-timeout-ms` | `120000` | Timeout di lettura per upload (ms) |
+| `middleware.upload.proxy.cleanup-interval-ms` | `300000` | Intervallo pulizia cache scadute (ms) |
+| `spring.servlet.multipart.max-file-size` | `100MB` | Dimensione massima file upload |
+| `spring.servlet.multipart.max-request-size` | `100MB` | Dimensione massima richiesta multipart |
+
+### Attività Fase 11 — Riepilogo
+
+| # | Attività | File | Stato |
+|---|---------|------|-------|
+| 11.1 | `UploadProxyEntry` (DTO cache) | `upload/UploadProxyEntry.java` (nuovo) | ✅ |
+| 11.2 | `UploadProxyCacheService` (cache one-shot) | `upload/UploadProxyCacheService.java` (nuovo) | ✅ |
+| 11.3 | `UploadFlussoController` (endpoint REST upload) | `upload/UploadFlussoController.java` (nuovo) | ✅ |
+| 11.4 | `UploadForwardingClient` (client HTTP multipart) | `client/UploadForwardingClient.java` (nuovo) | ✅ |
+| 11.5 | Post-processing `paaSILAutorizzaImportFlusso` | `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java` | ✅ |
+| 11.6 | `@EnableScheduling` su `Application.java` | `Application.java` | ✅ |
+| 11.7 | `spring-boot-starter-web` nel `pom.xml` | `mypay.mypaycore-springboot/pom.xml` | ✅ |
+| 11.8 | Proprietà `middleware.upload.proxy.*` e multipart | `application.properties`, `application-dev.properties` | ✅ |
+
+### Decisioni confermate
+
+- ✅ Cache one-shot: l'entry viene rimossa dopo il primo utilizzo (sicurezza: nessun riutilizzo del token)
+- ✅ Fail-safe nel post-processing: se fallisce, la risposta SOAP originale viene restituita invariata
+- ✅ Il SIL non cambia nulla: sostituisce solo l'host dell'`uploadUrl` (che ora punta al middleware)
+- ✅ Timeout più elevati per l'upload (120s read) rispetto ai client SOAP (30s read)
+- ✅ `setBufferRequestBody(false)` per evitare OOM su file grandi
+- ✅ Risposta errore compatibile con `MyBoxController.uploadByWS`: lista JSON + HTTP 200
+
+---
+
 ## Note Tecniche
 
 ### Compilazione (ambiente Windows/WSL)
@@ -955,10 +1095,11 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn compile -pl mypay.m
 | Test Java | Eliminati nel refactoring multi-ente (24 Mar 2026) — `src/test/` rimossa, dipendenze test rimosse dal `pom.xml`. Testing via Postman E2E. |
 | Credenziali OAuth2 | Non più globali — ogni ente ha il proprio `client_id` e `client_secret` in `mygov_ente_config_pu` |
 
-### Struttura componenti (stato attuale post Fase 8)
+### Struttura componenti (stato attuale post Fase 11)
 
 ```
 it.ariaspa.mypay.mypaycore.api/
+├── Application.java                           (✅ Fase 11 — aggiunta @EnableScheduling)
 ├── config/
 │   ├── PiattaformaUnitariaConfig.java     (✅ Fase 1 — senza clientId/clientSecret globali)
 │   ├── PathRegistryConfig.java            (✅ Fase 5 — mapping path-prefix → backend)
@@ -973,14 +1114,19 @@ it.ariaspa.mypay.mypaycore.api/
 │   └── RoutingDecisionService.java        (✅ Fase 10 — firma: decide(codIpaEnte, pathRichiesta))
 ├── client/
 │   ├── PiattaformaUnitariaClient.java     (✅ Fase 10 — firma: forwardSoapRequest(path, xml, ente))
-│   └── ProxyForwardingClient.java         (✅ Fase 5)
+│   ├── ProxyForwardingClient.java         (✅ Fase 5)
+│   └── UploadForwardingClient.java        (✅ Fase 11 — inoltro multipart verso legacy e PU)
+├── upload/
+│   ├── UploadProxyEntry.java              (✅ Fase 11 — DTO immutabile per cache proxy upload)
+│   ├── UploadProxyCacheService.java       (✅ Fase 11 — cache one-shot con TTL e pulizia @Scheduled)
+│   └── UploadFlussoController.java        (✅ Fase 11 — POST /api/upload/flusso)
 ├── soap/
 │   ├── endpoint/
 │   │   ├── AbstractSoapProxyEndpoint.java (✅ Fase 8 — classe base astratta per tutti gli endpoint proxy)
 │   │   ├── mypivot/
 │   │   │   └── ReconciliationEndpoint.java (✅ Fase 8 — spostato da soap/endpoint/, estende base class)
 │   │   └── mypay/
-│   │       ├── PagamentiTelematiciDovutiPagatiEndpoint.java  (✅ Fase 8 — 16 operazioni)
+│   │       ├── PagamentiTelematiciDovutiPagatiEndpoint.java  (✅ Fase 11 — 16 op., post-processing paaSILAutorizzaImportFlusso)
 │   │       ├── PagamentiTelematiciCCPPaEndpoint.java         (✅ Fase 8 — 4 operazioni)
 │   │       ├── PagamentiTelematiciEsitoEndpoint.java         (✅ Fase 8 — 1 operazione)
 │   │       ├── PagamentiTelematiciFlussiSPCEndpoint.java     (✅ Fase 8 — 2 operazioni)
