@@ -157,8 +157,6 @@ Gli script si trovano in `mypay.mypaycore-db/src/main/sql/` e vanno eseguiti in 
 
 1. `002_CREATE_MWPAY_TRANSACTION_LOG.sql` — crea tabella transaction log
 2. `004_CREATE_MYGOV_ENTE_CONFIG_PU.sql` — crea tabella configurazione enti PU
-3. `005_DROP_MWPAY_ENTE_CONFIG.sql` — rimuove tabella obsoleta (se presente)
-4. `007_ALTER_MYGOV_ENTE_CONFIG_PU.sql` — migrazione colonne per allineamento al modello Java
 
 Dopo la creazione delle tabelle, inserire almeno un record in `mygov_ente_config_pu` per ogni ente da instradare verso la Piattaforma Unitaria (consultare `006_INSERT_ENTE_CONFIG_PU_EXAMPLE.sql` come esempio).
 
@@ -406,8 +404,6 @@ Tre health indicator personalizzati:
 | `dev` | Sviluppo locale — sicurezza rilassata, logging DEBUG, resilienza rilassata | **Attivo** |
 | `uat` | Test di integrazione | Da creare |
 | `prod` | Produzione — SSL, sicurezza JWT, logging WARN | Da creare |
-
-> **Attenzione**: non creare il profilo `local` — è stato rimosso intenzionalmente.
 
 ---
 
