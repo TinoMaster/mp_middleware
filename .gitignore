@@ -76,3 +76,6 @@ files/
 # SpringLine2 specific (cache, config)
 cloud-config-cache/
 config-cache/
+
+# repository
+.svn/
