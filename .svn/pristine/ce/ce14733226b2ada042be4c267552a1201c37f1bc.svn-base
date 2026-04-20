@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+    <artifactId>mypay.mypaycore</artifactId>
+    <groupId>it.ariaspa.mypay.mypaycore</groupId>
+    <version>1.0.0</version>
+  </parent>
+
+	<artifactId>mypay.mypaycore-db</artifactId>
+	<packaging>zip</packaging>
+	<name>mypay.mypaycore-db</name>
+
+	<build>
+		<finalName>${project.artifactId}-${project.version}</finalName>
+		<sourceDirectory>src/main/sql</sourceDirectory>
+		<plugins>
+			<plugin>
+				<groupId>it.lispa.siss.maven-plugins</groupId>
+				<artifactId>custom-package-plugin</artifactId>
+				<extensions>true</extensions>
+				<version>3.2.0</version>
+				<configuration>
+					<sourceDirectory>${project.build.directory}/${project.build.finalName}</sourceDirectory>
+				</configuration>
+			<executions>
+				<execution>
+					<id>scripts-rest-service</id>
+					<phase>prepare-package</phase>
+					<goals>
+						<goal>db-zip</goal>
+					</goals>
+					<configuration>
+						<db>REST-SERVICE</db>
+						<scripts>
+							<!-- Fase 2: aggiungere qui gli script SQL del middleware
+							     (tabelle token, transazioni, audit, ecc.)
+							<script>
+								<file>${basedir}/src/main/sql/001_CREATE_TABLESPACE.sql</file>
+								<schema>SYS</schema>
+								<operazione>CREATE</operazione>
+								<oggetto>TABLESPACE</oggetto>
+								<nomeOggetto>TS_MYPAY</nomeOggetto>
+								<note>nessuna</note>
+								<dropOggetto>N</dropOggetto>
+								<tde>N</tde>
+								<lungaDurata>N</lungaDurata>
+							</script>
+							-->
+						</scripts>
+					</configuration>
+				</execution>
+			</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+	<licenses>
+		<license>
+			<name>Ariaspa License, Version 1.0</name>
+			<url>http://cm-maven.adlispa.local/licenza/license.txt</url>
+			<distribution>repo</distribution>
+			<comments>Licenza di prodotti erogati da Ariaspa per Regione Lombardia</comments>
+		</license>
+	</licenses>
+</project>
