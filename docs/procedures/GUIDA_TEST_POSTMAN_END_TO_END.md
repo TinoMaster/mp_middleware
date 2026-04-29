@@ -1,7 +1,7 @@
 # Guida Test End-to-End con Postman — MyPay Middleware
 
-**Versione:** 2.0  
-**Data:** 26 Marzo 2026  
+**Versione:** 2.1  
+**Data:** 29 Aprile 2026  
 **Ambiente testato:** PU UAT (`api.uat.p4pa.pagopa.it`)  
 **Risultato:** Test superato con successo (HTTP 200)
 
@@ -15,7 +15,7 @@ Questa guida documenta come eseguire un test end-to-end reale del middleware `my
 Postman (simula SIL) → Middleware (localhost:8080) → PU UAT (api.uat.p4pa.pagopa.it) → pagoPA
 ```
 
-Il middleware riceve la richiesta SOAP dal SIL, gestisce internamente l'autenticazione OAuth2, inoltra l'Envelope SOAP completo alla Piattaforma Unitaria, e restituisce la risposta al SIL.
+Il middleware riceve la richiesta SOAP dal SIL, gestisce internamente l'autenticazione OAuth2, inoltra l'Envelope SOAP completo alla Piattaforma Unitaria, post-processa le risposte di autorizzazione upload e restituisce la risposta al SIL.
 
 ---
 
@@ -212,7 +212,7 @@ Content-Type: text/xml;charset=UTF-8
     <SOAP-ENV:Body>
         <ns3:pivotSILAutorizzaImportFlussoTesoreriaRisposta
             xmlns:ns3="http://www.regione.veneto.it/pagamenti/pivot/ente/">
-            <uploadUrl>https://api.uat.p4pa.pagopa.it/pu/fileshare/organization/11/ingestionflowfiles?ingestionFlowFileId=XXXX&amp;ingestionFlowFileType=TREASURY_OPI&amp;fileOrigin=SIL</uploadUrl>
+            <uploadUrl>http://localhost:8080/api/upload/flusso</uploadUrl>
             <authorizationToken>AUTHORIZATIONTOKEN</authorizationToken>
             <requestToken>XXXX</requestToken>
             <importPath>/IMPORTPATH</importPath>
@@ -226,6 +226,7 @@ Content-Type: text/xml;charset=UTF-8
 - Content-Type della risposta: `text/xml`
 - Il body contiene `pivotSILAutorizzaImportFlussoTesoreriaRisposta`
 - I campi `uploadUrl`, `authorizationToken`, `requestToken`, `importPath` sono presenti
+- Il campo `uploadUrl` punta al middleware (`/api/upload/flusso`) e non piu' direttamente alla PU
 - Il `requestToken` è un numero (identificativo della richiesta sulla PU)
 
 > **NOTA:** I valori `XXXX`, `AUTHORIZATIONTOKEN`, `IMPORTPATH` sono placeholder usati dall'ambiente UAT. In produzione questi conterrebbero valori reali.
@@ -246,6 +247,44 @@ GET http://localhost:8080/actuator/health
 - `OAuthToken.details.stato` = `"Token OAuth2 in cache valido"`
 
 Il token ha una validità di circa 4 ore. Le richieste successive utilizzeranno il token in cache senza rinegoziarlo.
+
+---
+
+### Step 4 — Test negativo upload con versione file non supportata verso PU
+
+Dopo aver ottenuto `authorizationToken` e `uploadUrl` dallo Step 2, eseguire una chiamata multipart
+verso l'endpoint REST del middleware utilizzando un file con nome che termini, ad esempio, in
+`1_4.xml` oppure `1_5.xml`.
+
+**Richiesta:**
+```
+POST http://localhost:8080/api/upload/flusso
+Content-Type: multipart/form-data
+```
+
+**Parametri multipart:**
+- `authorizationToken` = valore ricevuto dalla risposta SOAP
+- `file` = file di test con nome versione non supportata, ad esempio `test_import_1_4.xml`
+
+**Risposta attesa:**
+- HTTP Status: `200 OK`
+- Body JSON nel formato legacy compatibile: lista con oggetto `{codice, descrizione}`
+- Codice errore: `PAA_IMPORT_FILE_VERSIONE_ERR(1_4)` oppure `PAA_IMPORT_FILE_VERSIONE_ERR(1_5)`
+
+**Esempio body atteso:**
+```json
+[
+  {
+    "codice": "PAA_IMPORT_FILE_VERSIONE_ERR(1_4)",
+    "descrizione": "La versione tracciato del file '1_4' non e' supportata. Per maggiori informazioni fare riferimento al manuale 'Integrazione Ente' ."
+  }
+]
+```
+
+**Cosa verificare:**
+- Il middleware non inoltra il file alla PU quando la versione non è supportata
+- Il formato della risposta resta compatibile con `MyBoxController.uploadByWS`
+- Le versioni `1_4` e `1_5` sono riconosciute ma attualmente bloccate in attesa della conversione del tracciato `2.0`
 
 ---
 
@@ -360,6 +399,7 @@ curl -v https://api.uat.p4pa.pagopa.it/pu/auth/oauth/token
 | 1 | Health check middleware | OK — db: UP, piattaformaUnitaria: UP |
 | 2 | Richiesta SOAP principale | OK — HTTP 200, risposta valida con `uploadUrl`, `authorizationToken`, `requestToken`, `importPath` |
 | 3 | Token OAuth2 in cache | OK — OAuthToken: UP, token valido (~4 ore) |
+| 4 | Upload con file versione non supportata | OK — HTTP 200, errore applicativo `PAA_IMPORT_FILE_VERSIONE_ERR(...)` |
 
 ### Risposta reale ricevuta dalla PU
 

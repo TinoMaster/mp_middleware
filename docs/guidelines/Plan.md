@@ -63,7 +63,7 @@ MIDDLEWARE
 | Fase 8 | ✅ Completata | Endpoint SOAP completi — 9 gruppi MyPay (40 operazioni) + refactoring base class |
 | Fase 9 | ✅ Completata | Log transazionale, audit, metriche |
 | Fase 10 | ✅ Completata | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
-| Fase 11 | ✅ Completata | Proxy upload flusso import: cache one-shot, endpoint REST `/api/upload/flusso`, post-processing `paaSILAutorizzaImportFlusso` |
+| Fase 11 | ✅ Completata | Proxy upload flusso import: cache one-shot, endpoint REST `/api/upload/flusso`, validazione versione file verso PU, post-processing `paaSILAutorizzaImportFlusso` |
 
 ---
 
@@ -937,7 +937,8 @@ senza dover conoscere l'URL reale del backend (legacy o PU). Il flusso si divide
    proxy verso il backend e post-processa la risposta, sostituendo l'URL di upload con quella
    del middleware e salvando i dati originali in cache.
 2. Il SIL carica il file su `POST /api/upload/flusso` del middleware → il middleware recupera
-   l'entry dalla cache (one-shot), ottiene l'URL originale del backend e inoltra il file.
+   l'entry dalla cache (one-shot), valida la versione del file nei casi PU, ottiene l'URL
+   originale del backend e inoltra il file.
 
 ### 11.1 `UploadProxyEntry` ✅
 
@@ -978,13 +979,27 @@ Controller `@RestController` che espone l'endpoint `POST /api/upload/flusso`:
 
 1. Estrae il file multipart dalla richiesta
 2. Recupera l'entry dalla cache usando l'`authorizationToken` (one-shot)
-3. Inoltra il file al backend (legacy o PU) tramite `UploadForwardingClient`
-4. Restituisce la risposta del backend al SIL
+3. Se il routing è `PIATTAFORMA_UNITARIA`, valida la versione del file tramite `UpdateFilePuService`
+4. Inoltra il file al backend (legacy o PU) tramite `UploadForwardingClient`
+5. Restituisce la risposta del backend al SIL
 
 La risposta di errore replica il formato di `MyBoxController.uploadByWS` del backend:
 una lista JSON con oggetti `{codice, descrizione}` e HTTP 200 (per compatibilità col backend).
 
-### 11.4 `UploadForwardingClient` ✅
+### 11.4 `UpdateFilePuService` ✅
+
+**File creato**: `upload/UpdateFilePuService.java`
+
+Servizio `@Service` che centralizza la validazione della versione file per gli upload diretti a
+Piattaforma Unitaria:
+
+- Usa `SupportedFileVersion` per mantenere il mapping tra formato canonico (`1.4`) e formato filename (`1_4`)
+- Estrae la versione dal nome file nel formato finale `x_y` (es. `1_4`)
+- Consente l'inoltro diretto per `1_0`, `1_1`, `1_2`, `1_3`
+- Riconosce `1_4` e `1_5` ma le rifiuta temporaneamente, in attesa della conversione al tracciato `2.0`
+- Per versione assente o non supportata restituisce errore applicativo `PAA_IMPORT_FILE_VERSIONE_ERR(...)`
+
+### 11.5 `UploadForwardingClient` ✅
 
 **File creato**: `client/UploadForwardingClient.java`
 
@@ -999,7 +1014,7 @@ Il `RestTemplate` è configurato con `setBufferRequestBody(false)` per evitare d
 file grandi in memoria. I timeout (connect: 10s, read: 120s) sono più elevati rispetto ai
 client SOAP per gestire upload di file di grandi dimensioni.
 
-### 11.5 Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` ✅
+### 11.6 Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` ✅
 
 **File modificato**: `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java`
 
@@ -1015,20 +1030,20 @@ gruppo per aggiungere il post-processing della risposta:
 3. Se il post-processing fallisce, la risposta originale viene restituita al SIL invariata
    (fail-safe, con log di warning)
 
-### 11.6 `Application.java` aggiornata ✅
+### 11.7 `Application.java` aggiornata ✅
 
 **File modificato**: `Application.java`
 
 Aggiunta l'annotazione `@EnableScheduling` per abilitare il task pianificato di pulizia
 della cache (`UploadProxyCacheService.puliziaEntryScadute()`).
 
-### 11.7 Dipendenze aggiunte ✅
+### 11.8 Dipendenze aggiunte ✅
 
 | Dipendenza | Motivo |
 |-----------|--------|
 | `spring-boot-starter-web` | Necessario per `@RestController`, `MultipartFile`, `RestTemplate` |
 
-### 11.8 Proprietà configurate ✅
+### 11.9 Proprietà configurate ✅
 
 | Proprietà | Default | Descrizione |
 |-----------|---------|-------------|
@@ -1047,11 +1062,12 @@ della cache (`UploadProxyCacheService.puliziaEntryScadute()`).
 | 11.1 | `UploadProxyEntry` (DTO cache) | `upload/UploadProxyEntry.java` (nuovo) | ✅ |
 | 11.2 | `UploadProxyCacheService` (cache one-shot) | `upload/UploadProxyCacheService.java` (nuovo) | ✅ |
 | 11.3 | `UploadFlussoController` (endpoint REST upload) | `upload/UploadFlussoController.java` (nuovo) | ✅ |
-| 11.4 | `UploadForwardingClient` (client HTTP multipart) | `client/UploadForwardingClient.java` (nuovo) | ✅ |
-| 11.5 | Post-processing `paaSILAutorizzaImportFlusso` | `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java` | ✅ |
-| 11.6 | `@EnableScheduling` su `Application.java` | `Application.java` | ✅ |
-| 11.7 | `spring-boot-starter-web` nel `pom.xml` | `mypay.mypaycore-springboot/pom.xml` | ✅ |
-| 11.8 | Proprietà `middleware.upload.proxy.*` e multipart | `application.properties`, `application-dev.properties` | ✅ |
+| 11.4 | `UpdateFilePuService` (validazione versione file PU) | `upload/UpdateFilePuService.java` (nuovo) | ✅ |
+| 11.5 | `UploadForwardingClient` (client HTTP multipart) | `client/UploadForwardingClient.java` (nuovo) | ✅ |
+| 11.6 | Post-processing `paaSILAutorizzaImportFlusso` | `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java` | ✅ |
+| 11.7 | `@EnableScheduling` su `Application.java` | `Application.java` | ✅ |
+| 11.8 | `spring-boot-starter-web` nel `pom.xml` | `mypay.mypaycore-springboot/pom.xml` | ✅ |
+| 11.9 | Proprietà `middleware.upload.proxy.*` e multipart | `application.properties`, `application-dev.properties` | ✅ |
 
 ### Decisioni confermate
 
@@ -1061,6 +1077,7 @@ della cache (`UploadProxyCacheService.puliziaEntryScadute()`).
 - ✅ Timeout più elevati per l'upload (120s read) rispetto ai client SOAP (30s read)
 - ✅ `setBufferRequestBody(false)` per evitare OOM su file grandi
 - ✅ Risposta errore compatibile con `MyBoxController.uploadByWS`: lista JSON + HTTP 200
+- ✅ Le versioni file `1_4` e `1_5` verso PU sono riconosciute ma bloccate fino all'implementazione della trasformazione al tracciato `2.0`
 
 ---
 
@@ -1119,7 +1136,8 @@ it.ariaspa.mypay.mypaycore.api/
 ├── upload/
 │   ├── UploadProxyEntry.java              (✅ Fase 11 — DTO immutabile per cache proxy upload)
 │   ├── UploadProxyCacheService.java       (✅ Fase 11 — cache one-shot con TTL e pulizia @Scheduled)
-│   └── UploadFlussoController.java        (✅ Fase 11 — POST /api/upload/flusso)
+│   ├── UpdateFilePuService.java           (✅ Fase 11 — validazione versione file per upload verso PU)
+│   └── UploadFlussoController.java        (✅ Fase 11 — POST /api/upload/flusso con validazione versione lato PU)
 ├── soap/
 │   ├── endpoint/
 │   │   ├── AbstractSoapProxyEndpoint.java (✅ Fase 8 — classe base astratta per tutti gli endpoint proxy)

@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.3.0  
-**Data**: 10 Aprile 2026  
-**Stato**: Proxy Upload Flusso Import completato (10 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`
+**Versione**: 4.4.0  
+**Data**: 29 Aprile 2026  
+**Stato**: Proxy Upload Flusso Import completato e raffinato (29 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, validazione versione file verso PU tramite `UpdateFilePuService` e `SupportedFileVersion`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -271,6 +271,7 @@ api/
 ├── upload/                                  ← Proxy upload flusso import
 │   ├── UploadProxyEntry.java                (DTO immutabile per la cache: uploadUrl, modalità, ente...)
 │   ├── UploadProxyCacheService.java         (cache TTL in-memory one-shot con pulizia @Scheduled)
+│   ├── UpdateFilePuService.java             (validazione versione tracciato file per upload verso PU)
 │   └── UploadFlussoController.java          (@RestController — POST /api/upload/flusso)
 │
 ├── soap/                                    ← Endpoint SOAP lato SIL
@@ -333,6 +334,7 @@ api/
 └── util/                                    ← Utility tecniche condivise
     ├── Constants.java                       (contenitore centralizzato delle costanti, incluse NS_FAULT_MYPAY e NS_FAULT_MYPIVOT)
     ├── LogHelper.java                       (utility per firme metodo leggibili nei log)
+    ├── SupportedFileVersion.java            (enum versioni file riconosciute per la validazione upload PU)
     └── Utilities.java                       (helper tecnici riusabili)
 ```
 
@@ -1310,11 +1312,19 @@ Parametri:
 **Flusso interno**:
 
 ```
-1. Recupera l'entry dalla cache: UploadProxyCacheService.getAndRemove(authorizationToken)
-   → se assente: risponde HTTP 400 (token non valido, già usato, o scaduto)
-2. Delega a UploadForwardingClient.inoltraUpload(entry, authorizationToken, file)
-3. Restituisce la risposta del backend al SIL (HTTP status + body)
+1. Estrae il file multipart dalla richiesta
+   → se assente o vuoto: restituisce errore applicativo compatibile con il backend
+2. Recupera l'entry dalla cache: UploadProxyCacheService.recuperaERimuovi(authorizationToken)
+   → se assente: restituisce errore applicativo compatibile con il backend
+3. Se l'entry è in modalità PU:
+   a. invoca UpdateFilePuService.verificaVersionePerPu(file)
+   b. se la versione non è supportata: restituisce errore applicativo `PAA_IMPORT_FILE_VERSIONE_ERR(...)`
+   c. se la versione è supportata: inoltra verso PU tramite UploadForwardingClient.inoltraAllaPU(...)
+4. Se l'entry è in modalità LEGACY: inoltra direttamente tramite UploadForwardingClient.inoltraAlLegacy(...)
+5. Restituisce al SIL la risposta del backend o l'errore applicativo nel formato legacy compatibile
 ```
+
+**Nota di compatibilità**: Anche nei casi di errore applicativo il controller mantiene il comportamento compatibile con il backend legacy, restituendo HTTP 200 con body JSON nel formato `[{codice, descrizione}]`.
 
 **Configurazione multipart**:
 
@@ -1322,6 +1332,40 @@ Parametri:
 spring.servlet.multipart.max-file-size=100MB
 spring.servlet.multipart.max-request-size=100MB
 ```
+
+---
+
+#### `UpdateFilePuService.java` (validazione versione file upload PU)
+
+**Tipo**: `@Service`  
+**Pacchetto**: `api/upload/`  
+**Scopo**: Valida la versione del tracciato dei file caricati verso Piattaforma Unitaria prima dell'inoltro al backend.
+
+**Logica**:
+- Estrae la versione dal nome file originale nel formato finale `x_y` (es. `1_4`)
+- Consente l'inoltro diretto verso PU per le versioni `1_0`, `1_1`, `1_2`, `1_3`
+- Riconosce le versioni `1_4` e `1_5` ma le blocca temporaneamente, perché la trasformazione al tracciato `2.0` non è ancora implementata
+- Per versione non rilevata o non supportata restituisce un errore applicativo compatibile con il backend legacy
+
+**Esito della validazione**:
+
+| Versione file | Esito |
+|---------------|------|
+| `1_0` | inoltro consentito |
+| `1_1` | inoltro consentito |
+| `1_2` | inoltro consentito |
+| `1_3` | inoltro consentito |
+| `1_4` | rifiutata temporaneamente |
+| `1_5` | rifiutata temporaneamente |
+| altra / assente | rifiutata |
+
+**Errore restituito**:
+- Codice: `PAA_IMPORT_FILE_VERSIONE_ERR(<versione>)`
+- Descrizione: versione tracciato non supportata e rinvio al manuale "Integrazione Ente"
+
+**Dipendenze principali**:
+- `SupportedFileVersion` — enum che mantiene il mapping tra formato canonico (`1.4`) e formato presente nel nome file (`1_4`)
+- `MultipartFile` — sorgente del nome file originale da validare
 
 ---
 
@@ -2142,7 +2186,8 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 | Routing per modalità (PU vs legacy) | ✅ Implementato | Fase 7 + Fase 10 | `RoutingDecisionService` — decide dove instradare in base a path + presenza config PU |
 | Log transazionale, audit, metriche | ✅ Implementato | Fase 9 | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
 | Credenziali OAuth2 per-ente | ✅ Implementato | Fase 10 | `mygov_ente_config_pu` — ogni ente ha il proprio `client_id` e `client_secret` |
-| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` |
+| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, post-processing `paaSILAutorizzaImportFlusso` |
+| Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0` | Non implementata | Fase futura | Le versioni `1_4` e `1_5` vengono riconosciute ma attualmente rifiutate in attesa della conversione del tracciato |
 | Logica di business (riconciliazione, tesoreria) | Non implementata | — | Gli endpoint fanno solo forwarding del payload |
 | Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche (salvo il post-processing upload) |
 | Validazione business dei dati in ingresso | Non implementata | — | Spring WS valida solo il namespace/localPart |
@@ -2174,7 +2219,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 | Fase 8 | ✅ | Endpoint SOAP completi: 40 operazioni su 10 endpoint, `AbstractSoapProxyEndpoint`, identificazione ente duale, cache duale, 52 file sorgente |
 | Fase 9 | ✅ | Log transazionale, metriche Micrometer, health check enti configurati, 124 test |
 | Fase 10 | ✅ | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
-| Fase 11 | ✅ | Proxy upload flusso import: `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, post-processing `paaSILAutorizzaImportFlusso` |
+| Fase 11 | ✅ | Proxy upload flusso import: `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, validazione versione file verso PU, post-processing `paaSILAutorizzaImportFlusso` |
 
 ### Fase 11 — Proxy Upload Flusso Import ✅ (completata)
 
@@ -2184,6 +2229,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 - `UploadProxyEntry` — DTO immutabile per la cache
 - `UploadProxyCacheService` — cache TTL one-shot con pulizia periodica `@Scheduled`
 - `UploadFlussoController` — `@RestController` su `POST /api/upload/flusso`
+- `UpdateFilePuService` — validazione preventiva della versione file prima dell'inoltro verso PU
 - `UploadForwardingClient` — client HTTP per l'inoltro del file (legacy e PU con Bearer OAuth2)
 - Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` per `paaSILAutorizzaImportFlusso`
 - `@EnableScheduling` su `Application.java`
@@ -2265,7 +2311,9 @@ Il file `AGENTS.md` nella root del progetto definisce:
 | **EnteCacheService** | Servizio che mantiene in cache (TTL configurabile) il risultato di `mygov_ente LEFT JOIN mygov_ente_config_pu` per evitare query DB a ogni richiesta SOAP |
 | **UploadProxyEntry** | DTO immutabile che rappresenta una voce nella cache del proxy upload: contiene l'`uploadUrl` originale del backend, la modalità di routing, il codice IPA e l'`EnteCompleto` |
 | **UploadProxyCacheService** | Cache TTL in-memory one-shot che associa l'`authorizationToken` all'`UploadProxyEntry` corrispondente — ogni entry è consumabile una sola volta |
-| **UploadFlussoController** | Controller REST (`POST /api/upload/flusso`) che riceve il file dal SIL e lo inoltra al backend originale tramite `UploadForwardingClient` |
+| **UploadFlussoController** | Controller REST (`POST /api/upload/flusso`) che riceve il file dal SIL, valida la versione nei casi PU e lo inoltra al backend originale tramite `UploadForwardingClient` |
+| **UpdateFilePuService** | Servizio che estrae la versione dal nome file e decide se l'upload verso PU può essere inoltrato o deve essere bloccato con errore applicativo |
+| **SupportedFileVersion** | Enum che rappresenta le versioni file riconosciute, mantenendo il mapping tra formato canonico (`1.4`) e formato filename (`1_4`) |
 | **UploadForwardingClient** | Client HTTP che esegue il POST multipart del file verso il backend (legacy o PU) aggiungendo l'`Authorization: Bearer` solo in modalità `PIATTAFORMA_UNITARIA` |
 | **authorizationToken** | Token monouso restituito dal backend in risposta a `paaSILAutorizzaImportFlusso` — usato come chiave nella cache del proxy upload e come parametro nell'upload del file |
 | **uploadUrl** | URL temporaneo restituito dal backend al quale caricare il file di import — sostituito dal middleware con l'URL del proprio endpoint `POST /api/upload/flusso` prima di rispondere al SIL |

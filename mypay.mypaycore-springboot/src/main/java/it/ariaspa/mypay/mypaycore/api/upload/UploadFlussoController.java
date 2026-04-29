@@ -45,11 +45,14 @@ public class UploadFlussoController {
 
     private final UploadProxyCacheService uploadProxyCacheService;
     private final UploadForwardingClient uploadForwardingClient;
+    private final UpdateFilePuService updateFilePuService;
 
     public UploadFlussoController(UploadProxyCacheService uploadProxyCacheService,
-                                  UploadForwardingClient uploadForwardingClient) {
+                                  UploadForwardingClient uploadForwardingClient,
+                                  UpdateFilePuService updateFilePuService) {
         this.uploadProxyCacheService = uploadProxyCacheService;
         this.uploadForwardingClient = uploadForwardingClient;
+        this.updateFilePuService = updateFilePuService;
     }
 
     /**
@@ -59,14 +62,16 @@ public class UploadFlussoController {
      * <ol>
      *   <li>Estrae il file multipart dalla richiesta</li>
      *   <li>Recupera l'entry dalla cache usando l'authorizationToken (one-shot)</li>
-     *   <li>Inoltra il file al backend (legacy o PU) tramite {@link UploadForwardingClient}</li>
-     *   <li>Restituisce la risposta del backend al SIL</li>
+     *   <li>Se il routing e' verso PU, valida la versione del file tramite {@link UpdateFilePuService}</li>
+     *   <li>Se la validazione ha esito positivo, inoltra il file al backend (legacy o PU) tramite {@link UploadForwardingClient}</li>
+     *   <li>Restituisce la risposta del backend oppure un errore applicativo compatibile con il SIL</li>
      * </ol>
      *
      * @param authorizationToken token JWT di autorizzazione (generato dal backend durante
      *                           la chiamata a {@code paaSILAutorizzaImportFlusso})
      * @param request            la richiesta multipart contenente il file
-     * @return la risposta del backend (formato JSON identico a MyBoxController.uploadByWS)
+     * @return la risposta del backend oppure un errore applicativo nel formato JSON
+     *         compatibile con {@code MyBoxController.uploadByWS}
      */
     @PostMapping(path = "/api/upload/flusso", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadFlusso(
@@ -101,6 +106,14 @@ public class UploadFlussoController {
         try {
             String rispostaBackend;
             if (entry.isPiattaformaUnitaria()) {
+                UpdateFilePuService.ErroreVersione erroreVersione =
+                        updateFilePuService.verificaVersionePerPu(file);
+                if (erroreVersione != null) {
+                    log.warn("Upload verso PU bloccato per versione non supportata: ente='{}', file='{}'",
+                            entry.getCodIpaEnte(), file.getOriginalFilename());
+                    return rispostaErrore(erroreVersione.getCodice(), erroreVersione.getDescrizione());
+                }
+
                 rispostaBackend = uploadForwardingClient.inoltraAllaPU(
                         entry.getUploadUrlOriginale(),
                         authorizationToken,
