@@ -67,8 +67,21 @@ mypay.mypaycore/                         ← root, parent POM
 │   │   ├── security.md                  ← @security: audit e analisi sicurezza applicativa
 │   │   └── orchestrator.md              ← @orchestrator: gestione ecosistema AI
 │   └── skills/                          ← skill OpenCode (conoscenza specializzata)
-│       └── springline2/
-│           └── SKILL.md                 ← conoscenza completa framework SpringLine2
+│       ├── caveman/
+│       ├── diagnose/
+│       ├── grill-me/
+│       ├── grill-with-docs/
+│       ├── improve-codebase-architecture/
+│       ├── java-coding-standards/
+│       ├── java-docs/
+│       ├── setup-matt-pocock-skills/
+│       ├── springline2/
+│       ├── tdd/
+│       ├── to-issues/
+│       ├── to-prd/
+│       ├── triage/
+│       ├── write-a-skill/
+│       └── zoom-out/
 └── AGENTS.md                            ← questo file
 ```
 
@@ -173,7 +186,21 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
 
 | Skill | File | Quando caricarla |
 |-------|------|-----------------|
+| `caveman` | `.opencode/skills/caveman/SKILL.md` | Comunicazione ultra-compressa (~75% token in meno). Quando l'utente dice "caveman mode", "talk like caveman", "less tokens", o invoca `/caveman` |
+| `diagnose` | `.opencode/skills/diagnose/SKILL.md` | Diagnostica strutturata di bug complessi e regressioni di performance. Quando l'utente dice "diagnose this", "debug this", segnala un bug o un degrado di performance |
+| `grill-me` | `.opencode/skills/grill-me/SKILL.md` | Intervista approfondita su un piano o design fino a raggiungere comprensione condivisa. Quando l'utente vuole stress-testare un piano o dice "grill me" |
+| `grill-with-docs` | `.opencode/skills/grill-with-docs/SKILL.md` | Sessione di grilling che verifica il piano contro il modello di dominio esistente e aggiorna la documentazione (CONTEXT.md, ADR) |
+| `improve-codebase-architecture` | `.opencode/skills/improve-codebase-architecture/SKILL.md` | Identifica opportunità di miglioramento architetturale, refactoring e moduli più testabili. Quando l'utente vuole migliorare l'architettura o rendere il codice più testabile |
+| `java-coding-standards` | `.opencode/skills/java-coding-standards/SKILL.md` | Standard di codifica Java per servizi Spring Boot: naming, immutabilità, Optional, stream, eccezioni, generici, layout progetto |
+| `java-docs` | `.opencode/skills/java-docs/SKILL.md` | Documentazione Javadoc per tipi Java: best practice per commenti, `@param`, `@return`, `@throws`, `{@code}` |
+| `setup-matt-pocock-skills` | `.opencode/skills/setup-matt-pocock-skills/SKILL.md` | Configura il blocco `## Agent skills` in AGENTS.md e `docs/agents/`. Da eseguire prima di `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture` o `zoom-out` |
 | `springline2` | `.opencode/skills/springline2/SKILL.md` | Ogni volta che si lavora su configurazione, sicurezza, logging, client SOAP/REST o dipendenze SpringLine2 |
+| `tdd` | `.opencode/skills/tdd/SKILL.md` | Test-Driven Development con ciclo red-green-refactor. Quando l'utente vuole sviluppare con TDD o menziona "red-green-refactor" |
+| `to-issues` | `.opencode/skills/to-issues/SKILL.md` | Suddivide un piano/spec/PRD in issue indipendenti sull'issue tracker usando vertical slice (tracer bullet) |
+| `to-prd` | `.opencode/skills/to-prd/SKILL.md` | Converte il contesto della conversazione in un PRD e lo pubblica sull'issue tracker |
+| `triage` | `.opencode/skills/triage/SKILL.md` | Gestisce il flusso di triage delle issue attraverso una state machine. Quando l'utente vuole creare, valutare o gestire issue |
+| `write-a-skill` | `.opencode/skills/write-a-skill/SKILL.md` | Crea nuove skill con struttura, progressive disclosure e risorse. Quando l'utente vuole creare o scrivere una nuova skill |
+| `zoom-out` | `.opencode/skills/zoom-out/SKILL.md` | Fornisce contesto più ampio e prospettiva di alto livello su una sezione di codice. Quando non si conosce bene un'area del codice |
 
 ---
 
