@@ -1,5 +1,6 @@
 package it.ariaspa.mypay.mypaycore.api.upload;
 
+import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
 import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
 
 import java.time.Instant;
@@ -47,6 +48,13 @@ public class UploadProxyEntry {
     /** Codice IPA dell'ente che ha effettuato la richiesta. */
     private final String codIpaEnte;
 
+    /**
+     * Endpoint di origine della richiesta (MYPAY o MYPIVOT).
+     * Usato da {@link UploadFlussoController} per decidere se applicare
+     * la verifica della versione del file (solo per richieste originate da MyPay).
+     */
+    private final BackendDestinatario endpointOrigine;
+
     /** Timestamp di creazione dell'entry (usato per il calcolo del TTL). */
     private final Instant timestampCreazione;
 
@@ -59,19 +67,22 @@ public class UploadProxyEntry {
      * @param importPath         percorso relativo per l'import del flusso
      * @param modalitaRouting    modalità di routing (PU o LEGACY)
      * @param codIpaEnte         codice IPA dell'ente
+     * @param endpointOrigine    endpoint di origine della richiesta (MYPAY o MYPIVOT)
      */
     public UploadProxyEntry(String uploadUrlOriginale,
                             String authorizationToken,
                             String requestToken,
                             String importPath,
                             ModalitaRouting modalitaRouting,
-                            String codIpaEnte) {
+                            String codIpaEnte,
+                            BackendDestinatario endpointOrigine) {
         this.uploadUrlOriginale = uploadUrlOriginale;
         this.authorizationToken = authorizationToken;
         this.requestToken = requestToken;
         this.importPath = importPath;
         this.modalitaRouting = modalitaRouting;
         this.codIpaEnte = codIpaEnte;
+        this.endpointOrigine = endpointOrigine;
         this.timestampCreazione = Instant.now();
     }
 
@@ -118,6 +129,22 @@ public class UploadProxyEntry {
     }
 
     /**
+     * @return endpoint di origine della richiesta (MYPAY o MYPIVOT)
+     */
+    public BackendDestinatario getEndpointOrigine() {
+        return endpointOrigine;
+    }
+
+    /**
+     * Verifica se la richiesta proviene dall'endpoint MyPivot.
+     *
+     * @return {@code true} se l'endpoint di origine è MYPIVOT
+     */
+    public boolean isFromMypivot() {
+        return endpointOrigine == BackendDestinatario.MYPIVOT;
+    }
+
+    /**
      * @return timestamp di creazione dell'entry
      */
     public Instant getTimestampCreazione() {
@@ -152,6 +179,7 @@ public class UploadProxyEntry {
         return "UploadProxyEntry{" +
                 "codIpaEnte='" + codIpaEnte + '\'' +
                 ", modalitaRouting=" + modalitaRouting +
+                ", endpointOrigine=" + endpointOrigine +
                 ", requestToken='" + requestToken + '\'' +
                 ", importPath='" + importPath + '\'' +
                 ", timestampCreazione=" + timestampCreazione +

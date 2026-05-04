@@ -2,6 +2,7 @@ package it.ariaspa.mypay.mypaycore.api.soap.endpoint.mypay;
 
 import it.ariaspa.mypay.mypaycore.api.client.PiattaformaUnitariaClient;
 import it.ariaspa.mypay.mypaycore.api.client.ProxyForwardingClient;
+import it.ariaspa.mypay.mypaycore.api.config.PathRegistryConfig.BackendDestinatario;
 import it.ariaspa.mypay.mypaycore.api.domain.ModalitaRouting;
 import it.ariaspa.mypay.mypaycore.api.logging.TransactionLoggingService;
 import it.ariaspa.mypay.mypaycore.api.metrics.MiddlewareMetricsService;
@@ -184,7 +185,7 @@ public class PagamentiTelematiciDovutiPagatiEndpoint extends AbstractSoapProxyEn
         // Salva nella cache l'entry associata all'authorizationToken
         UploadProxyEntry entry = new UploadProxyEntry(
                 uploadUrl, authorizationToken, requestToken, importPath,
-                modalitaRouting, codIpaEnte);
+                modalitaRouting, codIpaEnte, BackendDestinatario.MYPAY);
         uploadProxyCacheService.salva(authorizationToken, entry);
 
         // Sostituisce la uploadUrl nella risposta con l'URL del middleware

@@ -106,12 +106,21 @@ public class UploadFlussoController {
         try {
             String rispostaBackend;
             if (entry.isPiattaformaUnitaria()) {
-                UpdateFilePuService.ErroreVersione erroreVersione =
-                        updateFilePuService.verificaVersionePerPu(file);
-                if (erroreVersione != null) {
-                    log.warn("Upload verso PU bloccato per versione non supportata: ente='{}', file='{}'",
-                            entry.getCodIpaEnte(), file.getOriginalFilename());
-                    return rispostaErrore(erroreVersione.getCodice(), erroreVersione.getDescrizione());
+                // La verifica della versione del file si applica solo alle richieste
+                // originate dall'endpoint MyPay (paaSILAutorizzaImportFlusso).
+                // Per le richieste originate da MyPivot (pivotSILAutorizzaImportFlusso)
+                // la verifica viene saltata.
+                if (!entry.isFromMypivot()) {
+                    UpdateFilePuService.ErroreVersione erroreVersione =
+                            updateFilePuService.verificaVersionePerPu(file);
+                    if (erroreVersione != null) {
+                        log.warn("Upload verso PU bloccato per versione non supportata: ente='{}', file='{}'",
+                                entry.getCodIpaEnte(), file.getOriginalFilename());
+                        return rispostaErrore(erroreVersione.getCodice(), erroreVersione.getDescrizione());
+                    }
+                } else {
+                    log.info("Upload originato da MyPivot per ente '{}': verifica versione file saltata",
+                            entry.getCodIpaEnte());
                 }
 
                 rispostaBackend = uploadForwardingClient.inoltraAllaPU(
