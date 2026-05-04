@@ -322,6 +322,11 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
      * salva l'URL originale nella cache upload proxy, e sostituisce la uploadUrl con quella
      * del middleware.
      *
+     * <p>Quando il routing è verso PIATTAFORMA_UNITARIA, il campo {@code authorizationToken}
+     * nella risposta viene sostituito con {@code requestToken} perché la PU non restituisce
+     * un token univoco in quel campo. La cache viene indicizzata con il valore inviato al SIL
+     * ({@code requestToken} per PU, {@code authorizationToken} originale per legacy).
+     *
      * @param responseElement la risposta XML dal backend (body del SOAP Envelope)
      * @param messageContext  il contesto SOAP (per estrarre il codIpaEnte)
      */
@@ -345,20 +350,37 @@ public class ReconciliationEndpoint extends AbstractSoapProxyEndpoint {
         String codIpaEnte = estraiCodIpaEnteDaContesto(messageContext);
         ModalitaRouting modalitaRouting = determinaModalitaRouting(codIpaEnte);
 
-        // Salva nella cache l'entry associata all'authorizationToken,
-        // marcando l'origine come MYPIVOT per saltare la verifica versione in UploadFlussoController
+        // Determina la chiave di cache e il token da restituire al SIL nella risposta SOAP.
+        // Per PIATTAFORMA_UNITARIA: la PU non restituisce un authorizationToken univoco,
+        // quindi usiamo requestToken (univoco) come chiave di cache e lo sostituiamo nella risposta.
+        // Per LEGACY: il backend restituisce un authorizationToken univoco, usato come chiave.
+        String cacheKey;
+        String authorizationTokenSil;
+        if (modalitaRouting == ModalitaRouting.PIATTAFORMA_UNITARIA) {
+            cacheKey = requestToken;
+            authorizationTokenSil = requestToken;
+            sostituisciTestoTag(responseElement, "authorizationToken", authorizationTokenSil);
+            log.debug("Routing PU: authorizationToken originale '{}' sostituito con requestToken '{}'",
+                    authorizationToken, requestToken);
+        } else {
+            cacheKey = authorizationToken;
+            authorizationTokenSil = authorizationToken;
+        }
+
+        // Salva nella cache l'entry associata, marcando l'origine come MYPIVOT
+        // per saltare la verifica versione in UploadFlussoController
         UploadProxyEntry entry = new UploadProxyEntry(
-                uploadUrl, authorizationToken, requestToken, importPath,
+                uploadUrl, authorizationTokenSil, requestToken, importPath,
                 modalitaRouting, codIpaEnte, BackendDestinatario.MYPIVOT);
-        uploadProxyCacheService.salva(authorizationToken, entry);
+        uploadProxyCacheService.salva(cacheKey, entry);
 
         // Sostituisce la uploadUrl nella risposta con l'URL del middleware
         String middlewareUploadUrl = middlewareUploadBaseUrl + UPLOAD_FLUSSO_PATH;
         sostituisciTestoTag(responseElement, "uploadUrl", middlewareUploadUrl);
 
         log.info("Post-processing pivotSILAutorizzaImportFlusso completato per ente '{}' (routing: {}). "
-                + "uploadUrl sostituita: '{}' → '{}'",
-                codIpaEnte, modalitaRouting, uploadUrl, middlewareUploadUrl);
+                + "uploadUrl sostituita: '{}' → '{}', cacheKey='{}'",
+                codIpaEnte, modalitaRouting, uploadUrl, middlewareUploadUrl, cacheKey);
     }
 
     /**

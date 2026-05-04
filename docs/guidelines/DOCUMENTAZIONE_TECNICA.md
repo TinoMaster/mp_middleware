@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.4.0  
-**Data**: 29 Aprile 2026  
-**Stato**: Proxy Upload Flusso Import completato e raffinato (29 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, validazione versione file verso PU tramite `UpdateFilePuService` e `SupportedFileVersion`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`
+**Versione**: 4.5.0  
+**Data**: 04 Maggio 2026  
+**Stato**: Proxy Upload Flusso Import completato e raffinato (29 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, validazione versione file verso PU tramite `UpdateFilePuService` e `SupportedFileVersion`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint` e `pivotSILAutorizzaImportFlusso` in `ReconciliationEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`. Raffinamento cache key (04 Mag 2026): chiave cache condizionale (`requestToken` per routing PU, `authorizationToken` per LEGACY), campo `endpointOrigine` in `UploadProxyEntry`, `UploadFlussoController` salta verifica versione per richieste originate da MyPivot
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -288,8 +288,8 @@ api/
 │   │   │   ├── PagamentiTelematiciCCPEndpoint.java             (2 operazioni)
 │   │   │   ├── PagamentiTelematiciRTEndpoint.java              (1 operazione)
 │   │   │   └── PagamentiTelematiciAvvisiDigitaliEndpoint.java  (1 operazione)
-│   │   └── mypivot/                         ← 1 endpoint MyPivot (1 operazione)
-│   │       └── ReconciliationEndpoint.java                     (1 operazione)
+│   │   └── mypivot/                         ← 1 endpoint MyPivot (10 operazioni, con post-processing pivotSILAutorizzaImportFlusso)
+│   │       └── ReconciliationEndpoint.java                     (10 operazioni — post-processing su pivotSILAutorizzaImportFlusso)
 │   └── exception/
 │       ├── SoapFaultExceptionResolver.java  (7 tipi di eccezione mappati, Ordered.HIGHEST_PRECEDENCE, namespace dinamico)
 │       └── FaultCode.java                   (enum centralizzato dei codici fault SOAP)
@@ -1130,11 +1130,11 @@ Il metodo `getFaultDetailNamespace()` è **obbligatorio** su tutte le sottoclass
 
 ### Esempio: `ReconciliationEndpoint.java` (MyPivot)
 
-L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFORM_PATH (area riconciliazione):
+L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFORM_PATH (area riconciliazione), di cui una con post-processing per il proxy upload:
 - Namespace: `http://www.regione.veneto.it/pagamenti/pivot/ente/`
 - Path SIL: `/ws/pivot/PagamentiTelematiciPagatiRiconciliati`
 - Path PU: `/pu/sil/soap/reconciliation/PagamentiTelematiciPagatiRiconciliati`
-- Operazioni: `pivotSILAutorizzaImportFlusso`, `pivotSILAutorizzaImportFlussoRendicontazione`, `pivotSILAutorizzaImportFlussoRT`, `pivotSILAutorizzaImportFlussoTesoreria`, `pivotSILChiediAccertamento`, `pivotSILChiediPagatiRiconciliati`, `pivotSILChiediStatoExportFlussoRiconciliazione`, `pivotSILChiediStatoImportFlusso`, `pivotSILChiediStatoImportFlussoTesoreria`, `pivotSILPrenotaExportFlussoRiconciliazione`
+- Operazioni: `pivotSILAutorizzaImportFlusso` (con post-processing proxy upload), `pivotSILAutorizzaImportFlussoRendicontazione`, `pivotSILAutorizzaImportFlussoRT`, `pivotSILAutorizzaImportFlussoTesoreria`, `pivotSILChiediAccertamento`, `pivotSILChiediPagatiRiconciliati`, `pivotSILChiediStatoExportFlussoRiconciliazione`, `pivotSILChiediStatoImportFlusso`, `pivotSILChiediStatoImportFlussoTesoreria`, `pivotSILPrenotaExportFlussoRiconciliazione`
 
 ### Dettaglio operazioni per endpoint
 
@@ -1173,42 +1173,52 @@ L'endpoint MyPivot espone 10 operazioni, tutte con lo stesso namespace e PLATFOR
 
 ## 11. Proxy Upload Flusso Import
 
-Questa funzionalità risolve un problema specifico dei flussi di import: la Piattaforma Unitaria (e il backend legacy) restituiscono, in risposta all'operazione `paaSILAutorizzaImportFlusso`, un URL temporaneo (`uploadUrl`) al quale il SIL deve poi caricare il file. Il SIL però non è in grado di gestire l'autenticazione OAuth2 (richiesta dalla PU) né conosce la differenza tra modalità PU e LEGACY. Il middleware si interpone come proxy trasparente anche per questo secondo passo dell'upload.
+Questa funzionalità risolve un problema specifico dei flussi di import: la Piattaforma Unitaria (e il backend legacy) restituiscono, in risposta alle operazioni `paaSILAutorizzaImportFlusso` (MyPay) e `pivotSILAutorizzaImportFlusso` (MyPivot), un URL temporaneo (`uploadUrl`) al quale il SIL deve poi caricare il file. Il SIL però non è in grado di gestire l'autenticazione OAuth2 (richiesta dalla PU) né conosce la differenza tra modalità PU e LEGACY. Il middleware si interpone come proxy trasparente anche per questo secondo passo dell'upload.
 
 ### Flusso complessivo
 
 ```
 Passo 1 — Autorizzazione (SOAP)
 ──────────────────────────────
-SIL → POST /ws/pa/PagamentiTelematiciDovutiPagati
+SIL → POST /ws/pa/PagamentiTelematiciDovutiPagati  (MyPay)
+      oppure POST /ws/pivot/PagamentiTelematiciPagatiRiconciliati  (MyPivot)
       Body: <paaSILAutorizzaImportFlusso>...</paaSILAutorizzaImportFlusso>
+            oppure <pivotSILAutorizzaImportFlusso>...</pivotSILAutorizzaImportFlusso>
         │
         ▼
-  PagamentiTelematiciDovutiPagatiEndpoint
-  (post-processing attivo solo per paaSILAutorizzaImportFlusso)
+  PagamentiTelematiciDovutiPagatiEndpoint  (MyPay)
+  oppure ReconciliationEndpoint            (MyPivot)
+  (post-processing attivo solo per le operazioni di autorizzazione import flusso)
         │
         ▼
   Middleware → Backend (PU o LEGACY)
         │
         ◄── risposta backend:
               uploadUrl          (es. https://api.uat.p4pa.pagopa.it/pu/fileshare/...)
-              authorizationToken (token monouso per l'upload)
-              requestToken
+              authorizationToken (per LEGACY: token univoco; per PU: valore costante/non-univoco)
+              requestToken       (sempre univoco, UUID generato dal backend)
               importPath
         │
         ▼  post-processing:
-  a. Salva in UploadProxyCacheService:
-        authorizationToken → UploadProxyEntry {
+  a. Determina la chiave di cache in base alla modalità di routing:
+        → se modalità PIATTAFORMA_UNITARIA:
+            chiaveCache = requestToken (univoco)
+            sostituisce <authorizationToken> nella risposta XML con requestToken
+            (il SIL riceverà requestToken al posto dell'authorizationToken non univoco)
+        → se modalità LEGACY:
+            chiaveCache = authorizationToken (univoco reale del backend)
+  b. Salva in UploadProxyCacheService:
+        chiaveCache → UploadProxyEntry {
             uploadUrl originale, modalitaRouting, codIpaEnte,
-            EnteCompleto (credenziali OAuth2 per-ente)
+            authorizationTokenSil, requestToken, endpointOrigine (MYPAY o MYPIVOT)
         }
-  b. Sostituisce uploadUrl nella risposta XML con:
+  c. Sostituisce uploadUrl nella risposta XML con:
         ${middleware.upload.proxy.base-url}/api/upload/flusso
         │
         ▼
   SIL riceve la risposta modificata:
         uploadUrl = http://localhost:8086/api/upload/flusso
-        authorizationToken = <token-monouso>
+        authorizationToken = <requestToken> (se PU) o <token-originale> (se LEGACY)
 
 Passo 2 — Upload file (REST multipart)
 ──────────────────────────────────────
@@ -1218,19 +1228,25 @@ SIL → POST /api/upload/flusso
         │
         ▼
   UploadFlussoController
-  → UploadProxyCacheService.getAndRemove(authorizationToken)
+  → UploadProxyCacheService.recuperaERimuovi(authorizationToken)
     → recupera UploadProxyEntry (one-shot: rimossa dalla cache dopo il prelievo)
+    → il parametro authorizationToken viene usato come chiave di cache:
+        per PU è il requestToken, per LEGACY è il token reale
     → se non trovata → HTTP 400 (token non valido o scaduto)
         │
         ▼
-  UploadForwardingClient.inoltraUpload(entry, authorizationToken, file)
+  Se la entry ha endpointOrigine == MYPAY e modalità PU:
+    → validazione versione file tramite UpdateFilePuService
+    → se non supportata: errore applicativo PAA_IMPORT_FILE_VERSIONE_ERR
+  Se la entry ha endpointOrigine == MYPIVOT e modalità PU:
+    → validazione versione file SALTATA (non applicabile per flussi MyPivot)
+  Inoltra a UploadForwardingClient:
     → se modalità LEGACY:
         POST multipart verso uploadUrl originale
-        Parametri: authorizationToken + file
-        (nessun token OAuth2 aggiunto)
+        Parametri: authorizationToken (dal SIL) + file
     → se modalità PIATTAFORMA_UNITARIA:
         POST multipart verso uploadUrl originale
-        Parametri: authorizationToken + file
+        Parametri: authorizationToken (dal SIL) + file
         Header: Authorization: Bearer <token-OAuth2-per-ente>
         │
         ▼
@@ -1241,19 +1257,22 @@ SIL → POST /api/upload/flusso
 
 #### `UploadProxyEntry.java` (DTO immutabile)
 
-**Tipo**: Classe immutabile (record o POJO con costruttore)  
+**Tipo**: Classe immutabile (POJO con costruttore)  
 **Pacchetto**: `api/upload/`  
-**Scopo**: Rappresenta la voce della cache di proxy upload. Viene creata durante il post-processing di `paaSILAutorizzaImportFlusso` e consumata (one-shot) da `UploadFlussoController`.
+**Scopo**: Rappresenta la voce della cache di proxy upload. Viene creata durante il post-processing di `paaSILAutorizzaImportFlusso` (MyPay) e `pivotSILAutorizzaImportFlusso` (MyPivot), e consumata (one-shot) da `UploadFlussoController`.
 
 **Campi**:
 
 | Campo | Tipo | Descrizione |
 |-------|------|-------------|
-| `uploadUrl` | `String` | URL originale di upload restituito dal backend (PU o legacy) |
+| `uploadUrlOriginale` | `String` | URL originale di upload restituito dal backend (PU o legacy) |
+| `authorizationToken` | `String` | Token inviato al SIL nella risposta SOAP e usato per la lookup in cache — per PU contiene `requestToken`, per LEGACY contiene il token reale del backend |
+| `requestToken` | `String` | Token univoco della richiesta (UUID generato dal backend) — usato come chiave di cache per le richieste instradate verso PU |
+| `importPath` | `String` | Percorso relativo per l'import del flusso |
 | `modalitaRouting` | `ModalitaRouting` | Modalità di routing dell'ente (PU o LEGACY) |
 | `codIpaEnte` | `String` | Codice IPA dell'ente — per logging e metriche |
-| `ente` | `EnteCompleto` | Oggetto ente con credenziali OAuth2 (necessario per PU) |
-| `createdAt` | `Instant` | Timestamp di creazione — usato per la pulizia TTL |
+| `endpointOrigine` | `BackendDestinatario` | Endpoint di origine (MYPAY o MYPIVOT) — usato da `UploadFlussoController` per decidere se applicare la verifica versione file (solo MyPay) |
+| `timestampCreazione` | `Instant` | Timestamp di creazione — usato per la pulizia TTL |
 
 ---
 
@@ -1261,7 +1280,11 @@ SIL → POST /api/upload/flusso
 
 **Tipo**: `@Service`  
 **Pacchetto**: `api/upload/`  
-**Scopo**: Mantiene una mappa in-memory `authorizationToken → UploadProxyEntry` con TTL configurabile e semantica **one-shot** (ogni entry viene rimossa al primo utilizzo). Una task schedulata pulisce periodicamente le entry scadute.
+**Scopo**: Mantiene una mappa in-memory `chiaveCache → UploadProxyEntry` con TTL configurabile e semantica **one-shot** (ogni entry viene rimossa al primo utilizzo). Una task schedulata pulisce periodicamente le entry scadute.
+
+La chiave della cache è **condizionale** alla modalità di routing:
+- **Routing PU**: chiave = `requestToken` (univoco) — perché la PU non restituisce un `authorizationToken` univoco
+- **Routing LEGACY**: chiave = `authorizationToken` (univoco reale del backend)
 
 **Struttura interna**:
 
@@ -1316,12 +1339,15 @@ Parametri:
    → se assente o vuoto: restituisce errore applicativo compatibile con il backend
 2. Recupera l'entry dalla cache: UploadProxyCacheService.recuperaERimuovi(authorizationToken)
    → se assente: restituisce errore applicativo compatibile con il backend
-3. Se l'entry è in modalità PU:
+3. Se l'entry è in modalità PU e ha endpointOrigine == MYPAY:
    a. invoca UpdateFilePuService.verificaVersionePerPu(file)
-   b. se la versione non è supportata: restituisce errore applicativo `PAA_IMPORT_FILE_VERSIONE_ERR(...)`
+   b. se la versione non è supportata: restituisce errore applicativo PAA_IMPORT_FILE_VERSIONE_ERR(...)
    c. se la versione è supportata: inoltra verso PU tramite UploadForwardingClient.inoltraAllaPU(...)
-4. Se l'entry è in modalità LEGACY: inoltra direttamente tramite UploadForwardingClient.inoltraAlLegacy(...)
-5. Restituisce al SIL la risposta del backend o l'errore applicativo nel formato legacy compatibile
+4. Se l'entry è in modalità PU e ha endpointOrigine == MYPIVOT:
+   a. verifica versione file SALTATA (non applicabile per flussi MyPivot)
+   b. inoltra direttamente verso PU tramite UploadForwardingClient.inoltraAllaPU(...)
+5. Se l'entry è in modalità LEGACY: inoltra direttamente tramite UploadForwardingClient.inoltraAlLegacy(...)
+6. Restituisce al SIL la risposta del backend o l'errore applicativo nel formato legacy compatibile
 ```
 
 **Nota di compatibilità**: Anche nei casi di errore applicativo il controller mantiene il comportamento compatibile con il backend legacy, restituendo HTTP 200 con body JSON nel formato `[{codice, descrizione}]`.
@@ -1395,32 +1421,49 @@ Il timeout di lettura è volutamente più alto (120 secondi) rispetto ai client 
 
 ---
 
-#### Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint.java`
+#### Post-processing negli endpoint SOAP
 
-**File modificato**: `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java`
+**File modificati**: 
+- `soap/endpoint/mypay/PagamentiTelematiciDovutiPagatiEndpoint.java` — operazione `paaSILAutorizzaImportFlusso`
+- `soap/endpoint/mypivot/ReconciliationEndpoint.java` — operazione `pivotSILAutorizzaImportFlusso`
 
-Il post-processing è attivato **esclusivamente** per l'operazione `paaSILAutorizzaImportFlusso`. Tutte le altre 15 operazioni dell'endpoint rimangono proxy trasparenti senza modifiche alla risposta.
+Il post-processing è attivato **esclusivamente** per le operazioni di autorizzazione import flusso. Tutte le altre operazioni degli endpoint rimangono proxy trasparenti senza modifiche alla risposta.
 
-**Logica di post-processing**:
+**Logica di post-processing** (identica per entrambi gli endpoint, cambia solo il valore di `endpointOrigine`):
 
 ```
 risposta XML ricevuta dal backend
         │
         ▼
   Contiene <uploadUrl> e <authorizationToken>?
-  (operazione paaSILAutorizzaImportFlusso)
         │
    No ──┤──► restituisce la risposta invariata al SIL (proxy trasparente)
         │
    Sì ──┤
         ▼
-  Estrae uploadUrl e authorizationToken dalla risposta XML
+  Estrae uploadUrl, authorizationToken, requestToken, importPath dalla risposta XML
         │
         ▼
-  Crea UploadProxyEntry { uploadUrl, modalitaRouting, codIpaEnte, ente, createdAt=now }
+  Recupera codIpaEnte e modalitaRouting dall'ente
         │
         ▼
-  UploadProxyCacheService.put(authorizationToken, entry)
+  Se modalitaRouting == PIATTAFORMA_UNITARIA:
+    → chiaveCache = requestToken (univoco)
+    → authorizationTokenSil = requestToken
+    → sostituisce <authorizationToken> nella risposta XML con requestToken
+    → (motivo: la PU restituisce un authorizationToken non univoco,
+       requestToken è l'identificatore univoco della sessione)
+  Se modalitaRouting == LEGACY:
+    → chiaveCache = authorizationToken (univoco reale del backend)
+    → authorizationTokenSil = authorizationToken
+    → nessuna modifica al campo <authorizationToken> nella risposta
+        │
+        ▼
+  Crea UploadProxyEntry { uploadUrl, authorizationTokenSil, requestToken,
+                          importPath, modalitaRouting, codIpaEnte, endpointOrigine }
+        │
+        ▼
+  UploadProxyCacheService.salva(chiaveCache, entry)
         │
         ▼
   Sostituisce uploadUrl nella risposta XML con:
@@ -1430,7 +1473,11 @@ risposta XML ricevuta dal backend
   Restituisce la risposta modificata al SIL
 ```
 
-**Nota**: L'`EnteCompleto` (con le credenziali OAuth2) è disponibile nell'endpoint tramite la `RoutingDecision` già calcolata durante il flusso normale di `processRequest()`.
+Il valore di `endpointOrigine` differisce tra i due endpoint:
+- `PagamentiTelematiciDovutiPagatiEndpoint` → `BackendDestinatario.MYPAY`
+- `ReconciliationEndpoint` → `BackendDestinatario.MYPIVOT`
+
+Questo permette a `UploadFlussoController` di saltare la verifica della versione del file per le richieste originate da MyPivot.
 
 ---
 
@@ -2186,7 +2233,7 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 | Routing per modalità (PU vs legacy) | ✅ Implementato | Fase 7 + Fase 10 | `RoutingDecisionService` — decide dove instradare in base a path + presenza config PU |
 | Log transazionale, audit, metriche | ✅ Implementato | Fase 9 | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
 | Credenziali OAuth2 per-ente | ✅ Implementato | Fase 10 | `mygov_ente_config_pu` — ogni ente ha il proprio `client_id` e `client_secret` |
-| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, post-processing `paaSILAutorizzaImportFlusso` |
+| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, post-processing `paaSILAutorizzaImportFlusso` e `pivotSILAutorizzaImportFlusso`, cache key condizionale (requestToken per PU, authorizationToken per LEGACY), campo `endpointOrigine` |
 | Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0` | Non implementata | Fase futura | Le versioni `1_4` e `1_5` vengono riconosciute ma attualmente rifiutate in attesa della conversione del tracciato |
 | Logica di business (riconciliazione, tesoreria) | Non implementata | — | Gli endpoint fanno solo forwarding del payload |
 | Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche (salvo il post-processing upload) |
@@ -2225,13 +2272,14 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 **Obiettivo**: Implementare il meccanismo di proxy per l'upload dei flussi di import, consentendo ai SIL di caricare i file senza gestire direttamente OAuth2 né distinguere tra modalità PU e LEGACY.
 
-**Risultato** (10 Apr 2026): Implementato il flusso completo in due passi (autorizzazione SOAP + upload REST multipart), con:
-- `UploadProxyEntry` — DTO immutabile per la cache
-- `UploadProxyCacheService` — cache TTL one-shot con pulizia periodica `@Scheduled`
-- `UploadFlussoController` — `@RestController` su `POST /api/upload/flusso`
+**Risultato** (10 Apr 2026, raffinato 04 Mag 2026): Implementato il flusso completo in due passi (autorizzazione SOAP + upload REST multipart), con:
+- `UploadProxyEntry` — DTO immutabile per la cache, con campo `endpointOrigine` (MYPAY/MYPIVOT)
+- `UploadProxyCacheService` — cache TTL one-shot con pulizia periodica `@Scheduled`, chiave condizionale: `requestToken` per PU, `authorizationToken` per LEGACY
+- `UploadFlussoController` — `@RestController` su `POST /api/upload/flusso`, verifica versione file solo per richieste MyPay (saltata per MyPivot)
 - `UpdateFilePuService` — validazione preventiva della versione file prima dell'inoltro verso PU
 - `UploadForwardingClient` — client HTTP per l'inoltro del file (legacy e PU con Bearer OAuth2)
 - Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` per `paaSILAutorizzaImportFlusso`
+- Post-processing in `ReconciliationEndpoint` per `pivotSILAutorizzaImportFlusso`
 - `@EnableScheduling` su `Application.java`
 - Dipendenza `spring-boot-starter-web` aggiunta al `pom.xml`
 - Properties `middleware.upload.proxy.*` e `spring.servlet.multipart.*`
@@ -2309,11 +2357,12 @@ Il file `AGENTS.md` nella root del progetto definisce:
 | **mygov_ente_config_pu** | Tabella del middleware che contiene le credenziali OAuth2 per-ente per la Piattaforma Unitaria — relazione 1:1 con `mygov_ente` |
 | **EnteCompleto** | Aggregato Java che unisce `Ente` + `EnteConfigPu` — usato da `EnteCacheService` e `RoutingDecisionService` |
 | **EnteCacheService** | Servizio che mantiene in cache (TTL configurabile) il risultato di `mygov_ente LEFT JOIN mygov_ente_config_pu` per evitare query DB a ogni richiesta SOAP |
-| **UploadProxyEntry** | DTO immutabile che rappresenta una voce nella cache del proxy upload: contiene l'`uploadUrl` originale del backend, la modalità di routing, il codice IPA e l'`EnteCompleto` |
-| **UploadProxyCacheService** | Cache TTL in-memory one-shot che associa l'`authorizationToken` all'`UploadProxyEntry` corrispondente — ogni entry è consumabile una sola volta |
-| **UploadFlussoController** | Controller REST (`POST /api/upload/flusso`) che riceve il file dal SIL, valida la versione nei casi PU e lo inoltra al backend originale tramite `UploadForwardingClient` |
+| **UploadProxyEntry** | DTO immutabile che rappresenta una voce nella cache del proxy upload: contiene l'`uploadUrl` originale del backend, l'`authorizationTokenSil` (requestToken per PU, token reale per LEGACY), il `requestToken`, la modalità di routing, il codice IPA, il timestamp di creazione e l'`endpointOrigine` (MYPAY o MYPIVOT) |
+| **UploadProxyCacheService** | Cache TTL in-memory one-shot che associa la chiave di cache all'`UploadProxyEntry` corrispondente. La chiave è condizionale: `requestToken` per routing PU (la PU non restituisce un authorizationToken univoco), `authorizationToken` per routing LEGACY. Ogni entry è consumabile una sola volta |
+| **UploadFlussoController** | Controller REST (`POST /api/upload/flusso`) che riceve il file dal SIL, recupera l'entry dalla cache, valida la versione nei casi MyPay+PU (saltata per MyPivot) e lo inoltra al backend originale tramite `UploadForwardingClient` |
 | **UpdateFilePuService** | Servizio che estrae la versione dal nome file e decide se l'upload verso PU può essere inoltrato o deve essere bloccato con errore applicativo |
 | **SupportedFileVersion** | Enum che rappresenta le versioni file riconosciute, mantenendo il mapping tra formato canonico (`1.4`) e formato filename (`1_4`) |
 | **UploadForwardingClient** | Client HTTP che esegue il POST multipart del file verso il backend (legacy o PU) aggiungendo l'`Authorization: Bearer` solo in modalità `PIATTAFORMA_UNITARIA` |
-| **authorizationToken** | Token monouso restituito dal backend in risposta a `paaSILAutorizzaImportFlusso` — usato come chiave nella cache del proxy upload e come parametro nell'upload del file |
-| **uploadUrl** | URL temporaneo restituito dal backend al quale caricare il file di import — sostituito dal middleware con l'URL del proprio endpoint `POST /api/upload/flusso` prima di rispondere al SIL |
+| **authorizationToken** | Campo nella risposta SOAP di autorizzazione import flusso. Per routing LEGACY contiene il token univoco reale del backend; per routing PU viene sostituito con `requestToken` (univoco) perché la PU restituisce un valore costante. Usato dal SIL come parametro nella chiamata di upload e come chiave di lookup nella cache |
+| **requestToken** | Token univoco della richiesta (UUID generato dal backend). Usato come chiave di cache per le richieste instradate verso PU, in sostituzione dell'`authorizationToken` non univoco |
+| **endpointOrigine** | Campo di `UploadProxyEntry` che indica l'endpoint SOAP di origine della richiesta (`BackendDestinatario.MYPAY` o `BackendDestinatario.MYPIVOT`). Usato da `UploadFlussoController` per decidere se applicare la verifica della versione del file (solo per MyPay) |
