@@ -66,6 +66,8 @@ mypay.mypaycore/                         ← root, parent POM
 │   │   ├── tester.md                    ← @tester: testing Java e collection Postman
 │   │   ├── security.md                  ← @security: audit e analisi sicurezza applicativa
 │   │   └── orchestrator.md              ← @orchestrator: gestione ecosistema AI
+│   ├── commands/                        ← comandi personalizzati OpenCode
+│   │   └── md-to-pdf.md                 ← comando per convertire Markdown in PDF
 │   └── skills/                          ← skill OpenCode (conoscenza specializzata)
 │       ├── caveman/
 │       ├── diagnose/
@@ -123,6 +125,14 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn test -pl mypay.mypa
   - `docs/guidelines/DOCUMENTAZIONE_TECNICA.md` (incrementare versione e data)
   - `docs/guidelines/Plan.md` (aggiornare stato fasi)
 - Per pianificazione e aggiornamento docs, invocare l'agente **@planner**
+
+### Conversione Markdown in PDF
+
+- Il progetto dispone del comando personalizzato `/md-to-pdf` per convertire file Markdown in PDF
+- Il comando usa la libreria globale npm `md-to-pdf` (già installata nell'ambiente)
+- Utilizzo: `/md-to-pdf path/to/file.md` (se non specificato, converte DOCUMENTAZIONE_TECNICA.md)
+- Il PDF generato usa formattazione professionale (formato A4, margini ottimizzati)
+- Il file PDF viene creato nella stessa directory del file Markdown sorgente
 
 ### Commenti e documentazione nel codice
 

@@ -1,9 +1,9 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 4.5.0  
-**Data**: 04 Maggio 2026  
-**Stato**: Proxy Upload Flusso Import completato e raffinato (29 Apr 2026) — meccanismo di proxy per l'upload dei flussi di import: `UploadProxyCacheService`, `UploadFlussoController` (REST `POST /api/upload/flusso`), `UploadForwardingClient`, validazione versione file verso PU tramite `UpdateFilePuService` e `SupportedFileVersion`, post-processing `paaSILAutorizzaImportFlusso` in `PagamentiTelematiciDovutiPagatiEndpoint` e `pivotSILAutorizzaImportFlusso` in `ReconciliationEndpoint`; `@EnableScheduling` su `Application`, dipendenza `spring-boot-starter-web`, properties `middleware.upload.proxy.*`. Raffinamento cache key (04 Mag 2026): chiave cache condizionale (`requestToken` per routing PU, `authorizationToken` per LEGACY), campo `endpointOrigine` in `UploadProxyEntry`, `UploadFlussoController` salta verifica versione per richieste originate da MyPivot
+**Versione**: 5.0.0  
+**Data**: 05 Maggio 2026  
+**Stato**: Middleware completo con 40 operazioni SOAP su 10 endpoint, proxy upload flusso import, routing dinamico PU/LEGACY per-ente
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
 > Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
@@ -176,10 +176,6 @@ mypay.mypaycore-springboot/
             ├── application-dev.properties    ← profilo sviluppo (unico profilo attivo)
             └── bootstrap.properties
 ```
-
-> **Nota**: La directory `src/test/` è stata eliminata nel refactoring multi-ente (24 Mar 2026).
-> Il testing avviene esclusivamente tramite la collection Postman E2E
-> (`docs/procedures/GUIDA_TEST_POSTMAN_END_TO_END.md`).
 
 ### `mypay.mypaycore-db` (modulo database)
 
@@ -356,11 +352,6 @@ piattaforma-unitaria.auth.grant-type=client_credentials
 piattaforma-unitaria.auth.scope=openid
 ```
 
-> **Nota** (refactoring multi-ente, 24 Mar 2026): Le proprietà `piattaforma-unitaria.auth.client-id`
-> e `piattaforma-unitaria.auth.client-secret` sono state **rimosse** dalla configurazione globale.
-> Le credenziali OAuth2 sono ora memorizzate per-ente nella tabella `mygov_ente_config_pu`
-> e vengono passate direttamente a `OAuthTokenService.getAccessToken(codIpaEnte, clientId, clientSecret)`.
-
 **Proprietà esposte**:
 
 | Proprietà | Tipo | Descrizione |
@@ -510,7 +501,7 @@ spring.datasource.pa.hikari.pool-name=HikariPool-PA-dev
 **Tipo**: `@Service`  
 **Scopo**: Gestisce il ciclo di vita completo dei token OAuth2 in modalità **multi-ente**. Ogni ente ha le proprie credenziali (`clientId` e `clientSecret`) memorizzate in `mygov_ente_config_pu`; i token vengono mantenuti in una cache separata per ente.
 
-**Struttura interna** (post refactoring multi-ente, 24 Mar 2026):
+**Struttura interna**:
 
 ```
 ConcurrentHashMap<codIpaEnte, TokenData>
@@ -564,10 +555,6 @@ getAccessToken(codIpaEnte, clientId, clientSecret) chiamato
 | `getTokenCacheSize()` | Numero di enti con token in cache — usato dall'health indicator |
 | `getEntiInCache()` | Set dei codici IPA degli enti con token in cache |
 
-> **Nota architetturale**: La classe `OAuthTokenInterceptor` è stata **eliminata** nel refactoring
-> multi-ente. Il token Bearer viene ora aggiunto manualmente da `PiattaformaUnitariaClient`
-> chiamando `OAuthTokenService.getAccessToken(ente.getCodIpaEnte(), ente.getClientId(), ente.getClientSecret())`.
-
 ---
 
 ## 7. Modulo Client Piattaforma
@@ -582,7 +569,7 @@ getAccessToken(codIpaEnte, clientId, clientSecret) chiamato
 - Read timeout: **30 secondi** (le chiamate SOAP possono essere lente)
 - **Nessun interceptor** — il token Bearer viene aggiunto manualmente nel metodo (refactoring multi-ente)
 
-**Flusso di `forwardSoapRequest(path, soapXml, ente)`** (firma aggiornata nel refactoring multi-ente, 24 Mar 2026):
+**Flusso di `forwardSoapRequest(path, soapXml, ente)`** (firma aggiornata nel refactoring multi-ente):
 
 ```
 Richiesta SOAP ricevuta (con oggetto EnteCompleto)
@@ -672,11 +659,6 @@ Richiesta SOAP ricevuta (modalità LEGACY)
 ## 8. Modulo Persistenza (domain + repository)
 
 Questo modulo gestisce il layer di persistenza del middleware: modelli di dominio, accesso ai dati tramite Jdbi e cache in-memory degli enti.
-
-> **Nota** (refactoring multi-ente, 24 Mar 2026): La tabella `mwpay_ente_config` e tutti i
-> componenti associati (`EnteConfig`, `EnteConfigRepository`, `EnteConfigRowMapper`,
-> `EnteConfigCacheService`) sono stati **eliminati** e sostituiti con il nuovo schema basato
-> su `mygov_ente` + `mygov_ente_config_pu`.
 
 ### Modelli di dominio (`domain/`)
 
@@ -893,7 +875,7 @@ Questo modulo implementa la logica di decisione del routing — il "cervello" de
 **Tipo**: Classe immutabile  
 **Scopo**: Contiene tutte le informazioni necessarie all'endpoint SOAP per instradare una richiesta.
 
-**Campi** (4 — aggiornato nel refactoring multi-ente, 24 Mar 2026):
+**Campi** (4):
 
 | Campo | Tipo | Descrizione |
 |-------|------|-------------|
@@ -919,10 +901,6 @@ Questo modulo implementa la logica di decisione del routing — il "cervello" de
 
 **Tipo**: `@Service`  
 **Scopo**: Servizio centrale di decisione del routing. Data una richiesta SOAP (identificata da `codIpaEnte` e `pathRichiesta`), produce una `RoutingDecision`.
-
-> **Nota** (refactoring multi-ente, 24 Mar 2026): La firma è cambiata da
-> `decide(codIpaEnte, tipoOperazione, pathRichiesta)` a `decide(codIpaEnte, pathRichiesta)`.
-> Il parametro `tipoOperazione` è stato eliminato perché il routing è ora per-ente, non per-operazione.
 
 **Dipendenze** (3, iniettate via costruttore):
 
@@ -1623,10 +1601,6 @@ Il campo `httpStatus` permette al `SoapFaultExceptionResolver` di includere il c
 - L'ente non è presente nella tabella `mygov_ente` con una configurazione attiva in `mygov_ente_config_pu`
 - L'`EnteCompleto` non è trovato dalla `EnteCacheService`
 
-> **Nota** (refactoring multi-ente, 24 Mar 2026): Il campo `tipoOperazione` è stato **eliminato**.
-> Il costruttore accetta ora solo `codIpaEnte`: `EnteNonCensitoException(codIpaEnte)`.
-> Il messaggio del SOAP Fault non include più il tipo di operazione.
-
 **SOAP Fault generato**: `Client/Sender Fault` con codice `ENTE_NON_AUTORIZZATO`
 
 ---
@@ -1673,7 +1647,7 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 **Tipo**: `@Component` + `HealthIndicator`  
 **Scopo**: Verifica lo stato dei token OAuth2 in cache per tutti gli enti.
 
-**Logica** (aggiornata nel refactoring multi-ente, 24 Mar 2026):
+**Logica** (aggiornata):
 - Itera su tutti gli enti presenti nella cache token (`OAuthTokenService.getEntiInCache()`)
 - `UP`: almeno un ente con token valido; riporta `tokensValidi` e `tokensInCache`
 - `DOWN`: nessun token in cache o token scaduti (il middleware li rinnoverà automaticamente al prossimo utilizzo — questo stato è normale al primo avvio)
@@ -1698,7 +1672,7 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 **Tipo**: `@Component` + `HealthIndicator`  
 **Scopo**: Verifica che nel sistema siano configurati enti attivi per il routing.
 
-**Logica** (aggiornata nel refactoring multi-ente, 24 Mar 2026 — usa `EnteCacheService`):
+**Logica** (aggiornata — usa `EnteCacheService`):
 - Interroga `EnteCacheService.size()` per ottenere il numero totale di enti in cache
 - Interroga `EnteCacheService.countEntiPiattaformaUnitaria()` per gli enti con PU abilitata
 - `UP`: se `entiTotali > 0` — almeno un ente censito e attivo
@@ -1728,7 +1702,7 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 **Tipo**: `@Service`  
 **Scopo**: Espone metriche operative del middleware tramite Micrometer, consultabili da Spring Boot Actuator (`/actuator/metrics`).
 
-**Metriche registrate** (aggiornate nel refactoring multi-ente, 24 Mar 2026):
+**Metriche registrate**:
 
 | Metrica | Tipo Micrometer | Tag | Descrizione |
 |---------|----------------|-----|-------------|
@@ -1737,7 +1711,7 @@ Il middleware espone endpoint di monitoraggio tramite **Spring Boot Actuator**.
 | `middleware.enti.totali` | Gauge | — | Numero totale di enti in cache (collegato a `EnteCacheService.size()`) |
 | `middleware.enti.piattaforma.unitaria` | Gauge | — | Numero di enti abilitati per la PU (collegato a `EnteCacheService.countEntiPiattaformaUnitaria()`) |
 
-**Metodi principali** (firme aggiornate — rimossa `tipoOperazione`):
+**Metodi principali**:
 
 | Metodo | Descrizione |
 |--------|-------------|
@@ -1962,7 +1936,7 @@ Tutti i file di configurazione sono in formato **`.properties`** (la migrazione 
 
 **Caratteristiche**:
 - Punta all'ambiente UAT reale (`api.uat.p4pa.pagopa.it`)
-- **Nessuna credenziale OAuth2 globale** — le credenziali sono per-ente nella tabella `mygov_ente_config_pu` (refactoring multi-ente, 24 Mar 2026)
+- **Nessuna credenziale OAuth2 globale** — le credenziali sono per-ente nella tabella `mygov_ente_config_pu`
 - **Sicurezza JWT disabilitata** — i SIL non inviano JWT; l'autenticazione avviene tramite `codIpaEnte` + `password` nel body SOAP
 - Configurazione SpringLine2 security: `jwt.enabled=false`, `anonymous` per `/**`
 - Logging DEBUG per il codice del middleware, Spring WS e RestTemplate
@@ -1988,26 +1962,18 @@ Tutti i file di configurazione sono in formato **`.properties`** (la migrazione 
 
 ### Profili `uat` e `prod` (da creare in futuro)
 
-I profili `uat` e `prod` sono stati rimossi nella fase di semplificazione dell'ambiente di sviluppo. Verranno ricreati come file `application-uat.properties` e `application-prod.properties` quando necessario per il deployment.
+I profili `uat` e `prod` verranno creati come file `application-uat.properties` e `application-prod.properties` quando necessario per il deployment.
 
-**Variabili d'ambiente previste per il profilo `prod`** (da usare quando verrà creato):
+**Variabili d'ambiente previste per il profilo `prod`**:
 
 | Variabile | Descrizione |
 |-----------|-------------|
 | `PIATTAFORMA_BASE_URL` | URL base della Piattaforma Unitaria |
 | `SPL_JWT_CYPHER_SECRET` | Segreto per cifratura JWT SpringLine2 |
 
-> **Nota** (refactoring multi-ente, 24 Mar 2026): Le variabili `PIATTAFORMA_CLIENT_ID` e
-> `PIATTAFORMA_CLIENT_SECRET` sono state **rimosse** — le credenziali OAuth2 sono ora
-> per-ente nella tabella `mygov_ente_config_pu`.
-
 ---
 
 ## 16. Test
-
-> **Nota** (refactoring multi-ente, 24 Mar 2026): L'intera directory `src/test/` è stata
-> **eliminata** insieme alle dipendenze `spring-boot-starter-test` e `spring-ws-test` dal `pom.xml`.
-> Le 14 classi di test (124 test JUnit 5 + Mockito) non esistono più.
 
 ### Strategia di testing attuale
 
@@ -2033,7 +1999,6 @@ Il testing del middleware avviene esclusivamente tramite la **collection Postman
 
 ```
 mvn compile → BUILD SUCCESS (55 source files, 0 errori)
-mvn test    → NON eseguibile (src/test/ eliminata — nessuna dipendenza di test nel pom.xml)
 ```
 
 ### Collection Postman
@@ -2079,9 +2044,7 @@ cmd.exe /c "set JAVA_HOME=C:\Program Files\Java\jdk-17&& mvn compile -pl mypay.m
 
 ### Esecuzione dei test
 
-> **Nota** (refactoring multi-ente, 24 Mar 2026): `mvn test` non è più eseguibile poiché
-> la directory `src/test/` è stata eliminata. Il testing avviene via collection Postman E2E.
-> Vedere `docs/procedures/GUIDA_TEST_POSTMAN_END_TO_END.md`.
+I test vengono eseguiti tramite la collection Postman E2E. Vedere sezione 16 per i dettagli.
 
 ### Build completa (tutti i moduli)
 
@@ -2227,23 +2190,22 @@ Risposta attesa: `{"status":"UP","details":{"stato":"Token OAuth2 in cache valid
 
 Questa sezione è fondamentale per chi prende in carico il progetto: elenca esplicitamente le funzionalità **intenzionalmente escluse** dalle fasi completate finora.
 
-| Funzionalità | Stato | Fase prevista | Note |
-|-------------|-------|---------------|------|
-| Schema e tabelle del database PostgreSQL | ✅ Implementato | Fase 6 + Fase 10 | Tabelle `mygov_ente_config_pu` e `mygov_mw_transaction_log`, DAO Jdbi, cache TTL per-ente |
-| Routing per modalità (PU vs legacy) | ✅ Implementato | Fase 7 + Fase 10 | `RoutingDecisionService` — decide dove instradare in base a path + presenza config PU |
-| Log transazionale, audit, metriche | ✅ Implementato | Fase 9 | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
-| Credenziali OAuth2 per-ente | ✅ Implementato | Fase 10 | `mygov_ente_config_pu` — ogni ente ha il proprio `client_id` e `client_secret` |
-| Proxy upload flusso import | ✅ Implementato | Fase 11 | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, post-processing `paaSILAutorizzaImportFlusso` e `pivotSILAutorizzaImportFlusso`, cache key condizionale (requestToken per PU, authorizationToken per LEGACY), campo `endpointOrigine` |
-| Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0` | Non implementata | Fase futura | Le versioni `1_4` e `1_5` vengono riconosciute ma attualmente rifiutate in attesa della conversione del tracciato |
-| Logica di business (riconciliazione, tesoreria) | Non implementata | — | Gli endpoint fanno solo forwarding del payload |
-| Trasformazione payload SOAP | Non implementata | — | Il payload viene inoltrato così com'è senza modifiche (salvo il post-processing upload) |
-| Validazione business dei dati in ingresso | Non implementata | — | Spring WS valida solo il namespace/localPart |
-| Endpoint SOAP aggiuntivi | ✅ Implementato | Fase 8 | 40 operazioni su 10 endpoint — `AbstractSoapProxyEndpoint` + 4 MyPay PA + 5 MyPay FESP + 1 MyPivot, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale |
-| Contract-first (WSDL/XSD) | Non implementato | — | Approccio contract-last corrente |
-| Messaggistica asincrona (JMS/ActiveMQ) | Non implementata | — | `springline2-jms` commentato nel pom |
-| Test unitari Java | Eliminati | — | Eliminati nel refactoring multi-ente (24 Mar 2026) — testing via Postman E2E |
-| Multi-tenancy (più enti su stessa istanza) | ✅ Implementato (Fase 10) | — | Cache token per-ente, credenziali OAuth2 per-ente |
-| Rate limiting per SIL | Non implementato | — | Potrebbe essere necessario con più enti |
+| Funzionalità | Stato | Note |
+|-------------|-------|------|
+| Schema e tabelle del database PostgreSQL | ✅ Implementato | Tabelle `mygov_ente_config_pu` e `mygov_mw_transaction_log`, DAO Jdbi, cache TTL per-ente |
+| Routing per modalità (PU vs legacy) | ✅ Implementato | `RoutingDecisionService` — decide dove instradare in base a path + presenza config PU |
+| Log transazionale, audit, metriche | ✅ Implementato | `TransactionLoggingService`, `MiddlewareMetricsService`, `EnteConfigHealthIndicator` |
+| Credenziali OAuth2 per-ente | ✅ Implementato | `mygov_ente_config_pu` — ogni ente ha il proprio `client_id` e `client_secret` |
+| Proxy upload flusso import | ✅ Implementato | `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, post-processing `paaSILAutorizzaImportFlusso` e `pivotSILAutorizzaImportFlusso`, cache key condizionale (requestToken per PU, authorizationToken per LEGACY), campo `endpointOrigine` |
+| Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0` | Non implementata | Le versioni `1_4` e `1_5` vengono riconosciute ma attualmente rifiutate in attesa della conversione del tracciato |
+| Logica di business (riconciliazione, tesoreria) | Non implementata | Gli endpoint fanno solo forwarding del payload |
+| Trasformazione payload SOAP | Non implementata | Il payload viene inoltrato così com'è senza modifiche (salvo il post-processing upload) |
+| Validazione business dei dati in ingresso | Non implementata | Spring WS valida solo il namespace/localPart |
+| Endpoint SOAP aggiuntivi | ✅ Implementato | 40 operazioni su 10 endpoint — `AbstractSoapProxyEndpoint` + 4 MyPay PA + 5 MyPay FESP + 1 MyPivot, identificazione ente duale (`codIpaEnte` + `identificativoDominio`), cache duale |
+| Contract-first (WSDL/XSD) | Non implementato | Approccio contract-last corrente |
+| Messaggistica asincrona (JMS/ActiveMQ) | Non implementata | `springline2-jms` commentato nel pom |
+| Multi-tenancy (più enti su stessa istanza) | ✅ Implementato | Cache token per-ente, credenziali OAuth2 per-ente |
+| Rate limiting per SIL | Non implementato | Potrebbe essere necessario con più enti |
 
 ---
 
@@ -2252,50 +2214,24 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 > **Nota**: Le fasi elencate qui sono allineate con `docs/guidelines/Plan.md`, che è il
 > documento di riferimento autoritativo per il piano di implementazione.
 
-### Riepilogo fasi completate
+### Riepilogo funzionalità implementate
 
-| Fase | Stato | Descrizione |
-|------|-------|-------------|
-| Fase 1 | ✅ | Fondazioni: pulizia demo, struttura middleware, OAuth2 |
-| Fase 2 | ✅ | Resilienza, gestione errori, health check, test unitari |
-| Fase 3 | ✅ | Persistenza PostgreSQL (plumbing): DataSource HikariCP + Jdbi |
-| Fase 4 | ✅ | Semplificazione configurazione: eliminazione profili, YAML→Properties |
-| Fase 5 | ✅ | Registro path-prefix, configurazione backend, `ProxyForwardingClient` |
-| Fase 6 | ✅ | Schema DB: tabelle `mwpay_ente_config` e `mygov_mw_transaction_log`, DAO Jdbi, cache TTL |
-| Fase 7 | ✅ | Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint |
-| Fase 8 | ✅ | Endpoint SOAP completi: 40 operazioni su 10 endpoint, `AbstractSoapProxyEndpoint`, identificazione ente duale, cache duale, 52 file sorgente |
-| Fase 9 | ✅ | Log transazionale, metriche Micrometer, health check enti configurati, 124 test |
-| Fase 10 | ✅ | Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`, test Java eliminati |
-| Fase 11 | ✅ | Proxy upload flusso import: `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, validazione versione file verso PU, post-processing `paaSILAutorizzaImportFlusso` |
+- ✅ Fondazioni: pulizia demo, struttura middleware, OAuth2
+- ✅ Resilienza, gestione errori, health check
+- ✅ Persistenza PostgreSQL: DataSource HikariCP + Jdbi
+- ✅ Semplificazione configurazione: eliminazione profili, YAML→Properties
+- ✅ Registro path-prefix, configurazione backend, `ProxyForwardingClient`
+- ✅ Schema DB: tabelle `mygov_ente_config_pu` e `mygov_mw_transaction_log`, DAO Jdbi, cache TTL
+- ✅ Logica di routing: `RoutingDecisionService`, eccezioni, refactoring endpoint
+- ✅ Endpoint SOAP completi: 40 operazioni su 10 endpoint, `AbstractSoapProxyEndpoint`, identificazione ente duale, cache duale
+- ✅ Log transazionale, metriche Micrometer, health check enti configurati
+- ✅ Refactoring multi-ente: credenziali OAuth2 per-ente, schema `mygov_ente_config_pu`
+- ✅ Proxy upload flusso import: `UploadProxyCacheService`, `UploadFlussoController`, `UploadForwardingClient`, `UpdateFilePuService`, validazione versione file verso PU, post-processing `paaSILAutorizzaImportFlusso`
 
-### Fase 11 — Proxy Upload Flusso Import ✅ (completata)
+### Funzionalità da implementare
 
-**Obiettivo**: Implementare il meccanismo di proxy per l'upload dei flussi di import, consentendo ai SIL di caricare i file senza gestire direttamente OAuth2 né distinguere tra modalità PU e LEGACY.
-
-**Risultato** (10 Apr 2026, raffinato 04 Mag 2026): Implementato il flusso completo in due passi (autorizzazione SOAP + upload REST multipart), con:
-- `UploadProxyEntry` — DTO immutabile per la cache, con campo `endpointOrigine` (MYPAY/MYPIVOT)
-- `UploadProxyCacheService` — cache TTL one-shot con pulizia periodica `@Scheduled`, chiave condizionale: `requestToken` per PU, `authorizationToken` per LEGACY
-- `UploadFlussoController` — `@RestController` su `POST /api/upload/flusso`, verifica versione file solo per richieste MyPay (saltata per MyPivot)
-- `UpdateFilePuService` — validazione preventiva della versione file prima dell'inoltro verso PU
-- `UploadForwardingClient` — client HTTP per l'inoltro del file (legacy e PU con Bearer OAuth2)
-- Post-processing in `PagamentiTelematiciDovutiPagatiEndpoint` per `paaSILAutorizzaImportFlusso`
-- Post-processing in `ReconciliationEndpoint` per `pivotSILAutorizzaImportFlusso`
-- `@EnableScheduling` su `Application.java`
-- Dipendenza `spring-boot-starter-web` aggiunta al `pom.xml`
-- Properties `middleware.upload.proxy.*` e `spring.servlet.multipart.*`
-
-### Fase 8 — Endpoint SOAP Completi ✅ (completata)
-
-**Obiettivo**: Aggiungere tutti gli endpoint SOAP per mypay e mypivot.
-
-**Risultato** (25 Mar 2026): Implementati tutti i 40 endpoint SOAP su 10 classi endpoint, con:
-- `AbstractSoapProxyEndpoint` come classe base per il proxy trasparente
-- Identificazione ente duale (`codIpaEnte` + `identificativoDominio`/codice fiscale)
-- Cache duale in `EnteCacheService` (`cacheByCodIpa` + `cacheByCodiceFiscale`)
-- Campo `codiceFiscaleEnte` aggiunto a `Ente.java`, `EnteRowMapper`, `EnteRepository`
-- Script SQL `007_ALTER_MYGOV_ENTE_CONFIG_PU.sql` per allineare lo schema DB
-- Collection Postman aggiornata con 48 richieste in 12 cartelle
-- 52 file sorgente, BUILD SUCCESS
+- Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0`
+- Profili `uat` e `prod` per deployment
 
 ---
 
