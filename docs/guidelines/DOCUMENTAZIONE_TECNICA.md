@@ -1,14 +1,11 @@
 # DOCUMENTAZIONE TECNICA
 ## Middleware MyPay — Guida Tecnica Completa
 
-**Versione**: 5.0.0  
+**Versione**: 5.0.1  
 **Data**: 05 Maggio 2026  
 **Stato**: Middleware completo con 40 operazioni SOAP su 10 endpoint, proxy upload flusso import, routing dinamico PU/LEGACY per-ente
 
 > **Questo documento è la Single Source of Truth (SSoT) del progetto `mypay.mypaycore`.**
-> Tutti gli agenti OpenCode (`.opencode/agents/*.md`) e il file `AGENTS.md` fanno riferimento
-> a questo documento per il contesto tecnico completo. Evitare di duplicare informazioni
-> di progetto nei file degli agenti.
 
 ---
 
@@ -34,7 +31,6 @@
 18. [Come testare il flusso completo](#18-come-testare-il-flusso-completo)
 19. [Cosa NON è ancora implementato](#19-cosa-non-è-ancora-implementato)
 20. [Prossimi passi — Fasi Future](#20-prossimi-passi--fasi-future)
-21. [Agenti OpenCode](#21-agenti-opencode)
 
 ---
 
@@ -2232,38 +2228,6 @@ Questa sezione è fondamentale per chi prende in carico il progetto: elenca espl
 
 - Trasformazione tracciati upload PU `1_4` / `1_5` verso `2.0`
 - Profili `uat` e `prod` per deployment
-
----
-
-## 21. Agenti OpenCode
-
-Il progetto utilizza **OpenCode** come strumento di sviluppo assistito da AI. Gli agenti personalizzati sono definiti in `.opencode/agents/` e le regole globali per tutti gli agenti si trovano in `AGENTS.md` nella root del repository.
-
-### Agenti disponibili
-
-| Agente | File | Quando usarlo |
-|--------|------|---------------|
-| `@expert` | `.opencode/agents/expert.md` | Decisioni architetturali, code review, debugging complesso |
-| `@planner` | `.opencode/agents/planner.md` | Pianificare nuove fasi, aggiornare docs/, allineare Plan.md |
-| `@tester` | `.opencode/agents/tester.md` | Scrivere test unitari Java, test integrazione, gestire Postman |
-| `@orchestrator` | `.opencode/agents/orchestrator.md` | Gestire ecosistema AI: agenti, skill, comandi |
-
-### Come invocare un agente
-
-In OpenCode, gli agenti si invocano con `@nome-agente` nella chat. Ad esempio:
-
-```
-@planner aggiorna Plan.md con le modifiche della Fase 2
-@planner pianifica la Fase 3 — logica di business
-```
-
-### Regole globali (`AGENTS.md`)
-
-Il file `AGENTS.md` nella root del progetto definisce:
-- Struttura del repository e contesto del progetto
-- Vincoli tecnici obbligatori (profili, datasource, sicurezza XXE)
-- Comandi di build e test per ambiente Windows/WSL
-- Convenzioni di documentazione (italiano, versioning semantico)
 
 ---
 
